@@ -1,121 +1,124 @@
 <template>
   <div class="setting-wrap">
-    <div class="nav"></div>
     <div class="container">
-      <template v-if="ipcRenderer">
-        <div class="item">
-          <div class="label">界面设置</div>
-          <div class="value">
-            <n-space>
-              <div>主窗口置顶：</div>
-              <n-radio
-                :checked="cacheStore.isAlwaysOnTop"
-                @change="cacheStore.isAlwaysOnTop = true"
-              >
-                是
-              </n-radio>
-              <n-radio
-                :checked="!cacheStore.isAlwaysOnTop"
-                @change="cacheStore.isAlwaysOnTop = false"
-              >
-                否
-              </n-radio>
-            </n-space>
-          </div>
+      <h1>设置</h1>
+      <section
+        v-if="ipcRenderer"
+        class="settings-section"
+      >
+        <h2>窗口</h2>
+        <div class="setting-row">
+          <span id="always-on-top-label">主窗口置顶</span>
+          <n-switch
+            v-model:value="cacheStore.isAlwaysOnTop"
+            aria-labelledby="always-on-top-label"
+          />
         </div>
-        <div class="hr"></div>
-      </template>
-
-      <div class="item">
-        <div class="label">接口配置</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
-              @click="handleCopy(getWssUrl() || WEBSOCKET_URL)"
-            >
-              wss：{{ getWssUrl() || WEBSOCKET_URL }}
-            </span>
-          </div>
-          <div class="v-item two">
-            <span>axios：</span>
-            <span
-              class="link"
-              @click="
-                handleOpenExternal({
-                  windowId: WINDOW_ID_ENUM.remote,
-                  url: getAxiosBaseUrl() || AXIOS_BASEURL,
-                })
-              "
-            >
-              <span>{{ getAxiosBaseUrl() || AXIOS_BASEURL }}</span>
-              <span>
-                <VPIconExternalLink class="icon"></VPIconExternalLink>
-              </span>
-            </span>
-          </div>
-          <div class="v-item two">
-            <span
-              class="link"
-              @click="handleCopy(getCoturnUrl() || COTURN_URL)"
-            >
-              coturn：{{ getCoturnUrl() || COTURN_URL }}
-            </span>
-          </div>
-          <div
-            class="v-item edit"
+      </section>
+      <section class="settings-section">
+        <div class="section-heading">
+          <h2>私有服务器</h2>
+          <button
+            class="text-button"
+            type="button"
             @click="showUrlModalCpt = true"
           >
             修改
-          </div>
+          </button>
         </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">作者信息</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
-              @click="handleCopy(AUTHOR_INFO.wechat)"
+        <button
+          class="server-address"
+          type="button"
+          @click="
+            handleOpenExternal({
+              windowId: WINDOW_ID_ENUM.remote,
+              url: getAxiosBaseUrl() || AXIOS_BASEURL,
+            })
+          "
+        >
+          {{ getAxiosBaseUrl() || AXIOS_BASEURL }}
+          <VPIconExternalLink class="icon" />
+        </button>
+        <details class="connection-details">
+          <summary>连接详情</summary>
+          <div class="detail-row">
+            <span>信令地址</span>
+            <button
+              class="text-button address"
+              type="button"
+              title="复制信令地址"
+              @click="handleCopy(getWssUrl() || WEBSOCKET_URL)"
             >
-              微信：{{ AUTHOR_INFO.wechat }}
-            </span>
+              {{ getWssUrl() || WEBSOCKET_URL }}
+            </button>
           </div>
-          <div class="v-item two">
-            <span
-              class="link"
-              @click="handleCopy(AUTHOR_INFO.qq)"
+          <div class="detail-row">
+            <span>中继地址</span>
+            <button
+              class="text-button address"
+              type="button"
+              title="复制中继地址"
+              @click="handleCopy(getCoturnUrl() || COTURN_URL)"
             >
-              QQ：{{ AUTHOR_INFO.qq }}
-            </span>
+              {{ getCoturnUrl() || COTURN_URL }}
+            </button>
           </div>
-          <div class="v-item two">
-            <span>
-              <span>Github：</span>
-              <span
-                class="link"
-                @click="
-                  handleOpenExternal({
-                    windowId: WINDOW_ID_ENUM.remote,
-                    url: AUTHOR_INFO.github,
-                  })
-                "
+        </details>
+      </section>
+      <section class="settings-section">
+        <div class="section-heading">
+          <h2>关于 {{ PRODUCT_NAME }}</h2>
+          <button
+            v-if="ipcRenderer"
+            class="text-button"
+            type="button"
+            @click="handleDeskVersionCheck"
+          >
+            检查更新
+          </button>
+        </div>
+        <p class="version">版本 {{ appStore.version }}</p>
+        <details class="project-details">
+          <summary>项目与下载</summary>
+          <div class="project-content">
+            <div class="detail-row">
+              <span>构建时间</span><span>{{ appStore.lastBuildDate }}</span>
+            </div>
+            <div class="detail-row">
+              <span>作者微信</span
+              ><button
+                class="text-button"
+                type="button"
+                @click="handleCopy(AUTHOR_INFO.wechat)"
               >
-                <span>{{ AUTHOR_INFO.github }}</span>
-                <VPIconExternalLink class="icon"></VPIconExternalLink>
-              </span>
-            </span>
-          </div>
-        </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">网页版体验</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
+                {{ AUTHOR_INFO.wechat }}
+              </button>
+            </div>
+            <div class="detail-row">
+              <span>作者 QQ</span
+              ><button
+                class="text-button"
+                type="button"
+                @click="handleCopy(AUTHOR_INFO.qq)"
+              >
+                {{ AUTHOR_INFO.qq }}
+              </button>
+            </div>
+            <button
+              class="text-button"
+              type="button"
+              @click="
+                handleOpenExternal({
+                  windowId: WINDOW_ID_ENUM.remote,
+                  url: AUTHOR_INFO.github,
+                })
+              "
+            >
+              项目源码 <VPIconExternalLink class="icon" />
+            </button>
+            <button
+              class="text-button"
+              type="button"
               @click="
                 handleOpenExternal({
                   windowId: WINDOW_ID_ENUM.remote,
@@ -123,19 +126,11 @@
                 })
               "
             >
-              <span>{{ WEB_DESK_URL }}</span>
-              <VPIconExternalLink class="icon"></VPIconExternalLink>
-            </span>
-          </div>
-        </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">私有化部署</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
+              打开网页版 <VPIconExternalLink class="icon" />
+            </button>
+            <button
+              class="text-button"
+              type="button"
               @click="
                 handleOpenExternal({
                   windowId: WINDOW_ID_ENUM.remote,
@@ -143,22 +138,15 @@
                 })
               "
             >
-              <span>了解详情</span>
-              <VPIconExternalLink class="icon"></VPIconExternalLink>
-            </span>
-          </div>
-        </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">下载客户端</div>
-        <div class="value">
-          <div class="v-item one">
+              私有化部署说明 <VPIconExternalLink class="icon" />
+            </button>
+            <h3>下载客户端</h3>
             <div class="client-list">
-              <div
+              <button
                 v-for="(item, index) in clientList"
                 :key="index"
                 class="client-btn"
+                type="button"
                 @click="
                   jumpToDownload({
                     windowId: WINDOW_ID_ENUM.remote,
@@ -166,36 +154,17 @@
                   })
                 "
               >
-                <div class="name">{{ item.label }}</div>
-                <div class="ext">{{ item.ext }}</div>
-              </div>
+                {{ item.label }} <span>{{ item.ext }}</span>
+              </button>
             </div>
           </div>
-        </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">关于{{ PRODUCT_NAME }}</div>
-        <div class="value">
-          <div class="v-item one">
-            <span>
-              当前版本：v{{ appStore.version }}（{{ appStore.lastBuildDate }}）
-            </span>
-            <span
-              v-if="ipcRenderer"
-              class="btn"
-              @click="handleDeskVersionCheck"
-            >
-              检查更新
-            </span>
-          </div>
-        </div>
-      </div>
+        </details>
+      </section>
     </div>
     <UrlModalCpt
       v-if="showUrlModalCpt"
       @close="showUrlModalCpt = false"
-    ></UrlModalCpt>
+    />
   </div>
 </template>
 
@@ -320,106 +289,136 @@ async function handleDeskVersionCheck() {
 .setting-wrap {
   box-sizing: border-box;
   height: 100vh;
-  .nav {
-    height: $top-system-bar-height;
-  }
+  overflow-y: auto;
   .container {
-    overflow: scroll;
-    padding: 0 40px;
-    height: calc(100vh - $top-system-bar-height);
-
-    @extend %customScrollbarHide;
-    &:hover {
-      @extend %customScrollbar;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: calc(#{$top-system-bar-height} + 16px) 32px 24px;
+  }
+  h1 {
+    margin: 0 0 24px;
+    font-size: 24px;
+    font-weight: 600;
+  }
+  h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  h3 {
+    margin: 12px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+  .settings-section {
+    padding: 20px 0;
+    border-top: 1px solid var(--desk-border);
+  }
+  .section-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 16px;
+    font-size: 14px;
+  }
+  .text-button {
+    padding: 6px 0;
+    border: 0;
+    background: transparent;
+    color: var(--desk-primary);
+    text-align: left;
+    font-size: 13px;
+  }
+  .text-button:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .server-address {
+    margin-top: 12px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--desk-text);
+    text-align: left;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .icon {
+    width: 12px;
+    height: 12px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+  details {
+    margin-top: 16px;
+  }
+  summary {
+    width: fit-content;
+    padding: 4px 0;
+    color: var(--desk-muted);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .detail-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+    margin-top: 12px;
+    color: var(--desk-muted);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .address {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .version {
+    margin: 12px 0 0;
+    color: var(--desk-muted);
+    font-size: 14px;
+  }
+  .project-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 8px;
+  }
+  .client-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .client-btn {
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: var(--desk-primary-soft);
+    color: var(--desk-primary);
+    font-size: 13px;
+    span {
+      margin-left: 4px;
     }
-    .item {
-      display: flex;
-      margin-bottom: 20px;
-      .icon {
-        margin-left: 5px;
-        width: 12px;
-        height: 12px;
-        vertical-align: middle;
-      }
-      .label {
-        margin-right: 20px;
-        width: 100px;
-        text-align: right;
-        font-weight: 500;
-        font-size: 15px;
-      }
-      .value {
-        flex: 1;
-        color: #666;
-        font-size: 14px;
-        .v-item {
-          margin-bottom: 5px;
-
-          .link {
-            cursor: pointer;
-          }
-          &.edit {
-            font-size: 13px;
-            cursor: pointer;
-          }
-          &.one {
-            .btn {
-              padding: 2px 10px;
-              border: 1px solid #bec3ca;
-              border-radius: 20px;
-              font-size: 12px;
-              cursor: pointer;
-
-              user-select: none;
-            }
-            .client-list {
-              display: flex;
-              flex-wrap: wrap;
-              .client-btn {
-                display: flex;
-                margin-right: 10px;
-                margin-bottom: 10px;
-                height: 30px;
-                border-radius: 5px;
-                background: #448ccb;
-                color: white;
-                font-size: 14px;
-                line-height: 30px;
-                cursor: pointer;
-
-                user-select: none;
-                .name {
-                  width: 120px;
-                  text-align: center;
-                }
-                .ext {
-                  width: 40px;
-                  background-color: #0000005c;
-                  text-align: center;
-                }
-              }
-            }
-          }
-          &.two {
-            .btn {
-              margin-right: 10px;
-              padding: 2px 10px;
-              border: 1px solid #bec3ca;
-              border-radius: 20px;
-              font-size: 12px;
-              cursor: pointer;
-
-              user-select: none;
-            }
-          }
-        }
-      }
-    }
-    .hr {
-      margin: 20px 0;
-      width: 100%;
-      height: 1px;
-      background-color: #ebedf1;
+  }
+  @media (max-width: 720px) {
+    .container {
+      padding-right: 20px;
+      padding-left: 20px;
     }
   }
 }

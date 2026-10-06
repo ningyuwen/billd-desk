@@ -77,7 +77,10 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm exec --yes --package=pnpm@9.15.9 -- pnpm e
 - `BilldDesk-win-0.0.1-x64-installer.exe`：Windows 64 位 NSIS 安装程序，可选择安装目录。
 
 `electron-builder.private.json5` 使用依赖自带的 Node-API 原生二进制。
-Mac 版通过 `ops/sign-mac-adhoc.cjs` 做本地 ad-hoc 签名，没有 Developer ID 证书和 Apple 公证。
+Mac 版通过 `ops/sign-mac-local.cjs` 复用本机固定的自签名证书，没有 Developer ID 证书和 Apple 公证。首次在新的构建机准备签名时运行 `python3 ops/setup-mac-local-signing.py`；已有身份时该脚本直接复用，不重新生成证书。
+签名身份保存在 `~/.config/billd-desk/signing/`：专用钥匙串、加密的 `identity.p12` 备份、钥匙串密码和身份配置。目录及敏感文件仅当前用户可读，整个目录须私下备份，不得提交 Git 或随安装包分发。没有修改系统信任设置，也没有把专用钥匙串加入全局搜索列表。
+后续打包始终使用同一证书，应用身份由包标识和证书指纹确定，不再绑定每次构建变化的代码哈希。缺少身份时打包直接报错，不回退到 ad-hoc。不要删除或重新生成此目录；更换构建机应安全迁移原身份，避免旧授权再次失效。
+从旧 ad-hoc 版本切换到固定证书后，可能需为新身份重新开启录屏与输入控制权限一次。此方案用于本地开发和验证；对外分发需改用 Apple Developer ID 和公证，并再次验证授权迁移。
 Windows 版没有使用发布者证书签名。首次打开可能出现未知开发者或发布者提示。
 Mac 被控端需要授权屏幕录制和输入控制，安装包不会自动授予权限。本机已在用户完成 Touch ID 验证后配置正式应用 `/Applications/BilldDesk.app`；macOS 27.0.1 对应设置项为“录屏与系统录音”和“设备控制和数据访问”，授权后完全退出并重开应用。
 

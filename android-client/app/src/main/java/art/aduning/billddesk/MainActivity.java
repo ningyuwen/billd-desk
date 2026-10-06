@@ -6,9 +6,12 @@ import android.content.*;
 import android.content.pm.PackageManager;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.media.projection.MediaProjectionConfig;
 import android.media.projection.MediaProjectionManager;
 import android.os.*;
@@ -22,10 +25,14 @@ import java.util.HashSet;
 import java.util.Set;
 
 public final class MainActivity extends Activity implements DeskEngine.Listener {
+    private static final int PRIMARY = 0xFF8A5A00, ON_PRIMARY = Color.WHITE;
+    private static final int SURFACE = Color.WHITE, BACKGROUND = 0xFFF5F6F8;
+    private static final int ON_SURFACE = 0xFF232830, SECONDARY = 0xFF59616D;
+    private static final int PRIMARY_CONTAINER = 0xFFF5EDD9, ERROR = 0xFFB42318;
     private DeskEngine engine;
     private SavedDevices savedDevices;
-    private TextView state, identity, connectionPassword, permissions, viewerState, serverLabel, qualityLabel, receivedQualityInfo;
-    private Button sharingButton, fullscreenButton, orientationButton;
+    private TextView state, identity, connectionPassword, permissions, viewerState, receivedQualityInfo;
+    private Button sharingButton, passwordButton, permissionButton, fullscreenButton, orientationButton;
     private EditText remoteCode;
     private ScrollView dashboardScroll;
     private ScrollView sideToolbarScroll;
@@ -44,7 +51,7 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         super.onCreate(savedState);
         engine = ((DeskApplication) getApplication()).engine();
         savedDevices = new SavedDevices(this);
-        root = column(); root.setBackgroundColor(Color.rgb(245, 246, 248)); root.setFocusableInTouchMode(true);
+        root = column(); root.setBackgroundColor(BACKGROUND); root.setFocusableInTouchMode(true);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             int left = insets.getSystemWindowInsetLeft(), top = insets.getSystemWindowInsetTop();
             int right = insets.getSystemWindowInsetRight(), bottom = insets.getSystemWindowInsetBottom();
@@ -57,17 +64,44 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         });
         setContentView(root);
         homePanel = column(); root.addView(homePanel, new LinearLayout.LayoutParams(-1, 0, 1));
-        TextView title = text("BilldDesk", 26); title.setTypeface(null, Typeface.BOLD); title.setPadding(dp(22), dp(16), dp(22), dp(4)); homePanel.addView(title);
-        state = text("正在连接服务器…", 14); state.setPadding(dp(22), 0, dp(22), dp(12)); homePanel.addView(state);
+        LinearLayout header = row(); header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(20), dp(12), dp(20), dp(4)); homePanel.addView(header);
+        TextView title = text("BilldDesk", 24); title.setTypeface(null, Typeface.BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        Button settingsButton = action(header, "设置", this::settingsOverview);
+        settingsButton.setLayoutParams(new LinearLayout.LayoutParams(-2, dp(48)));
+        state = text("正在连接服务器…", 13); state.setTextColor(SECONDARY);
+        state.setPadding(dp(20), 0, dp(20), dp(16)); homePanel.addView(state);
         dashboardScroll = new ScrollView(this); dashboardScroll.setFillViewport(true);
         dashboard = column(); dashboard.setPadding(dp(16), 0, dp(16), dp(20)); dashboardScroll.addView(dashboard);
         homePanel.addView(dashboardScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        LinearLayout own = card("此设备");
-        identity = text("设备代码：连接后生成", 23); identity.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); own.addView(identity);
-        connectionPassword = text("连接密码：••••••••", 17); own.addView(connectionPassword);
+        LinearLayout controller = card("连接设备");
+        remoteCode = input(controller, "对方设备代码", false);
+        remoteCode.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
+        Runnable connectDevice = () -> {
+            String target = remoteCode.getText().toString().trim();
+            if (target.isEmpty()) { remoteCode.setError("请输入对方设备代码"); return; }
+            connectionDialog(target);
+        };
+        primary(action(controller, "连接", connectDevice));
+        remoteCode.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId != android.view.inputmethod.EditorInfo.IME_ACTION_GO) return false;
+            connectDevice.run(); return true;
+        });
+        viewerState = text("", 13); viewerState.setTextColor(SECONDARY); controller.addView(viewerState);
+        savedDeviceCard = card("常用设备");
+        savedDeviceRows = column(); savedDeviceCard.addView(savedDeviceRows);
+
+        LinearLayout own = card("共享此手机");
+        TextView codeLabel = text("此设备代码", 13); codeLabel.setTextColor(SECONDARY); own.addView(codeLabel);
+        identity = text("连接中…", 28); identity.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); own.addView(identity);
+        LinearLayout passwordRow = row(); passwordRow.setGravity(Gravity.CENTER_VERTICAL); own.addView(passwordRow);
+        connectionPassword = text("连接密码：••••••••", 14);
+        passwordRow.addView(connectionPassword, new LinearLayout.LayoutParams(0, -2, 1));
+        passwordButton = action(passwordRow, "显示", () -> { showPassword = !showPassword; update(); });
+        passwordButton.setLayoutParams(new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout identityActions = row(); own.addView(identityActions);
-        action(identityActions, "显示密码", () -> { showPassword = !showPassword; update(); });
         action(identityActions, "复制连接信息", () -> {
             if (engine.uuid.isEmpty()) return;
             ClipData clip = ClipData.newPlainText("BilldDesk", "设备代码：" + engine.uuid + "\n连接密码：" + engine.password);
@@ -79,11 +113,11 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         action(identityActions, "换密码", () -> new AlertDialog.Builder(this).setMessage("更换连接密码会断开当前远程连接。")
                 .setPositiveButton("更换", (d, w) -> engine.resetPassword()).setNegativeButton("取消", null).show());
 
-        LinearLayout host = card("允许远程控制此手机");
-        host.addView(text("先开启共享，再把设备代码和密码发给对方。每次连接都会要求你确认。", 14));
-        permissions = text("", 14); host.addView(permissions);
-        action(host, "开启远程触控权限", () -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        sharingButton = action(host, "开启屏幕共享", () -> {
+        TextView sharingHint = text("开启共享后，对方每次连接都需要你确认。", 13);
+        sharingHint.setTextColor(SECONDARY); own.addView(sharingHint);
+        permissions = text("", 13); permissions.setTextColor(SECONDARY); own.addView(permissions);
+        permissionButton = action(own, "开启远程触控权限", () -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        sharingButton = action(own, "开启屏幕共享", () -> {
             if (engine.sharing) engine.stopSharing();
             else if (!engine.online) toast("请先连接服务器");
             else if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
@@ -91,26 +125,6 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
             else projection();
         });
 
-        LinearLayout controller = card("远程连接其他设备");
-        remoteCode = input(controller, "对方设备代码", false);
-        action(controller, "连接设备", () -> {
-            String target = remoteCode.getText().toString().trim();
-            if (target.isEmpty()) { toast("请输入对方设备代码"); return; }
-            connectionDialog(target);
-        });
-        viewerState = text("", 14); controller.addView(viewerState);
-        qualityLabel = text("", 13); controller.addView(qualityLabel);
-        action(controller, "画质设置", this::qualitySettings);
-        savedDeviceCard = card("已保存设备");
-        savedDeviceCard.addView(text("点连接即可重连；电脑更换密码后点修改。", 13));
-        savedDeviceRows = column(); savedDeviceCard.addView(savedDeviceRows);
-        dashboard.removeView(savedDeviceCard); dashboard.addView(savedDeviceCard, 0);
-
-        LinearLayout settings = card("服务器"); serverLabel = text(engine.config.server, 14); settings.addView(serverLabel);
-        LinearLayout controls = row(); settings.addView(controls);
-        action(controls, "私有服务器设置", this::serverSettings);
-        action(controls, "重新连接", engine::connect);
-        settings.addView(text("v" + BuildConfig.VERSION_NAME + " · Android 原生客户端", 12));
         remotePanel = column(); remotePanel.setVisibility(View.GONE); root.addView(remotePanel, new LinearLayout.LayoutParams(-1, 0, 2));
         renderer = new SurfaceViewRenderer(this);
         renderer.init(engine.egl.getEglBaseContext(), null);
@@ -172,16 +186,22 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
     @Override public void onState() { update(); }
     private void update() {
         state.setText(engine.status);
-        identity.setText("设备代码：" + (engine.uuid.isEmpty() ? "连接中…" : engine.uuid));
+        identity.setText(engine.uuid.isEmpty() ? "连接中…" : engine.uuid);
         connectionPassword.setText("连接密码：" + (showPassword ? engine.password : "••••••••"));
+        passwordButton.setText(showPassword ? "隐藏" : "显示");
+        passwordButton.setContentDescription(showPassword ? "隐藏连接密码" : "显示连接密码");
         if (showPassword) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
         permissions.setText("远程触控：" + (DeskAccessibilityService.current == null ? "未开启（仍可观看屏幕）" : "已开启"));
+        permissionButton.setVisibility(DeskAccessibilityService.current == null ? View.VISIBLE : View.GONE);
         sharingButton.setText(engine.sharing ? "停止屏幕共享" : "开启屏幕共享");
+        if (sharingButton.isActivated() != engine.sharing) {
+            sharingButton.setActivated(engine.sharing);
+            buttonStyle(sharingButton, engine.sharing ? ERROR : PRIMARY_CONTAINER, engine.sharing ? ON_PRIMARY : PRIMARY);
+        }
         viewerState.setText(engine.viewerStatus);
-        qualityLabel.setText("目标画面：" + engine.viewerQuality.label());
+        viewerState.setVisibility(engine.viewerStatus.isEmpty() ? View.GONE : View.VISIBLE);
         if (receivedQualityInfo != null) receivedQualityInfo.setText(engine.receivedPicture());
-        serverLabel.setText(engine.config.server);
         navigationButtons.setVisibility(engine.viewingAndroid() ? View.VISIBLE : View.GONE);
         if (!loadedServer.equals(engine.config.server)) {
             loadedServer = engine.config.server; remoteCode.setText(savedDevices.lastCode(loadedServer)); renderSavedDevices();
@@ -314,17 +334,33 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         java.util.List<String> codes = savedDevices.codes(engine.config.server);
         savedDeviceCard.setVisibility(codes.isEmpty() ? View.GONE : View.VISIBLE);
         for (String code : codes) {
-            TextView label = text(code, 20); label.setTypeface(Typeface.MONOSPACE); savedDeviceRows.addView(label);
-            LinearLayout actions = row(); savedDeviceRows.addView(actions);
+            LinearLayout device = row(); device.setGravity(Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams deviceLayout = new LinearLayout.LayoutParams(-1, -2);
+            deviceLayout.topMargin = dp(8); savedDeviceRows.addView(device, deviceLayout);
+            TextView label = text(code, 18); label.setTypeface(Typeface.MONOSPACE);
+            device.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            LinearLayout actions = row(); device.addView(actions);
             Button connect = action(actions, "连接", () -> {
                 String password = savedPassword(code);
                 if (password.isEmpty()) connectionDialog(code); else startConnection(code, password, true);
             }); connect.setContentDescription("连接已保存设备 " + code);
-            Button edit = action(actions, "修改", () -> connectionDialog(code)); edit.setContentDescription("修改已保存设备 " + code);
-            Button forget = action(actions, "忘记", () -> {
-                savedDevices.forget(engine.config.server, code); renderSavedDevices();
-                if (code.equals(remoteCode.getText().toString())) remoteCode.setText(savedDevices.lastCode(engine.config.server));
-            }); forget.setContentDescription("忘记已保存设备 " + code);
+            connect.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
+            Button more = action(actions, "更多", () -> {});
+            LinearLayout.LayoutParams moreLayout = new LinearLayout.LayoutParams(-2, -2);
+            moreLayout.setMarginStart(dp(8)); more.setLayoutParams(moreLayout);
+            more.setContentDescription("管理已保存设备 " + code);
+            more.setOnClickListener(view -> {
+                PopupMenu menu = new PopupMenu(this, view);
+                menu.getMenu().add(0, 1, 0, "修改密码"); menu.getMenu().add(0, 2, 1, "忘记设备");
+                menu.setOnMenuItemClickListener(item -> {
+                    if (item.getItemId() == 1) connectionDialog(code);
+                    else {
+                        savedDevices.forget(engine.config.server, code); renderSavedDevices();
+                        if (code.equals(remoteCode.getText().toString())) remoteCode.setText(savedDevices.lastCode(engine.config.server));
+                    }
+                    return true;
+                }); menu.show();
+            });
         }
     }
     private void projection() {
@@ -346,7 +382,9 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
     }
     private void remoteText() {
         EditText text = new EditText(this); text.setHint("输入发送给远程设备的文字");
-        text.setImeOptions(android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        text.setSingleLine(true);
+        text.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEND
+                | android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("远程文字输入").setView(text)
                 .setPositiveButton("发送", (d, w) -> {
@@ -359,6 +397,13 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
                 })
                 .setNegativeButton("取消", null).create();
         dialog.setOnDismissListener(d -> hideKeyboard()); dialog.show();
+        dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
+        text.setOnEditorActionListener((v, actionId, event) -> {
+            boolean enter = event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == KeyEvent.ACTION_DOWN;
+            if (actionId != android.view.inputmethod.EditorInfo.IME_ACTION_SEND && !enter) return false;
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); return true;
+        });
     }
     private void qualitySettings() {
         ViewerQuality quality = engine.viewerQuality;
@@ -391,6 +436,20 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         spinner.setAdapter(adapter); spinner.setSelection(selected);
         line.addView(spinner, new LinearLayout.LayoutParams(0, dp(48), 1)); return spinner;
     }
+    private void settingsOverview() {
+        LinearLayout form = column(); form.setPadding(dp(20), dp(8), dp(20), dp(16));
+        TextView quality = text("默认画质", 17); quality.setTypeface(null, Typeface.BOLD); form.addView(quality);
+        TextView qualitySummary = text(engine.viewerQuality.label(), 14); qualitySummary.setTextColor(SECONDARY); form.addView(qualitySummary);
+        ScrollView scroll = new ScrollView(this); scroll.addView(form);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("设置").setView(scroll).setPositiveButton("完成", null).create();
+        action(form, "画质设置", () -> { dialog.dismiss(); qualitySettings(); });
+        TextView server = text("私有服务器", 17); server.setTypeface(null, Typeface.BOLD); server.setPadding(0, dp(24), 0, dp(4)); form.addView(server);
+        TextView address = text(engine.config.server, 14); address.setTextColor(SECONDARY); form.addView(address);
+        action(form, "服务器设置", () -> { dialog.dismiss(); serverSettings(); });
+        action(form, "重新连接服务器", () -> { dialog.dismiss(); engine.connect(); });
+        TextView version = text("BilldDesk v" + BuildConfig.VERSION_NAME, 13); version.setTextColor(SECONDARY);
+        version.setPadding(0, dp(24), 0, 0); form.addView(version); dialog.show();
+    }
     private void serverSettings() {
         if (engine.sharing) { toast("请先停止共享，再修改服务器"); return; }
         LinearLayout form = column(); form.setPadding(dp(20), 0, dp(20), 0);
@@ -398,7 +457,8 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         EditText turn = input(form, "TURN 中继地址", false); turn.setText(engine.config.turn);
         EditText user = input(form, "中继用户名", false); user.setText(engine.config.user);
         EditText password = input(form, "中继密码", true); password.setText(engine.config.password);
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("私有服务器设置").setView(form)
+        ScrollView scroll = new ScrollView(this); scroll.addView(form);
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("私有服务器设置").setView(scroll)
                 .setPositiveButton("保存并连接", null).setNegativeButton("取消", null).create();
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             try {
@@ -410,21 +470,45 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
     private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
     private TextView text(String value, int size) {
-        TextView t = new TextView(this); t.setText(value); t.setTextColor(Color.rgb(35, 40, 48)); t.setTextSize(size); t.setPadding(0, dp(5), 0, dp(5)); return t;
+        TextView t = new TextView(this); t.setText(value); t.setTextColor(ON_SURFACE); t.setTextSize(size); t.setPadding(0, dp(4), 0, dp(4)); return t;
     }
     private LinearLayout card(String title) {
-        LinearLayout box = column(); box.setPadding(dp(16), dp(12), dp(16), dp(12));
-        GradientDrawable bg = new GradientDrawable(); bg.setColor(Color.WHITE); bg.setCornerRadius(dp(16)); box.setBackground(bg);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.bottomMargin = dp(14); dashboard.addView(box, params);
+        LinearLayout box = column(); box.setPadding(dp(20), dp(16), dp(20), dp(20));
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(SURFACE); bg.setCornerRadius(dp(16)); box.setBackground(bg);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.bottomMargin = dp(16); dashboard.addView(box, params);
         TextView heading = text(title, 17); heading.setTypeface(null, Typeface.BOLD); box.addView(heading); return box;
     }
     private Button action(LinearLayout box, String title, Runnable callback) {
-        Button b = new Button(this); b.setText(title); b.setTextSize(13); b.setAllCaps(false); b.setMinWidth(0); b.setMinimumWidth(0);
+        Button b = new Button(this); b.setText(title); b.setTextSize(14); b.setAllCaps(false); b.setMinWidth(dp(48)); b.setMinimumWidth(dp(48));
+        b.setMinHeight(dp(48)); b.setMinimumHeight(dp(48)); b.setPadding(dp(12), dp(8), dp(12), dp(8));
+        buttonStyle(b, PRIMARY_CONTAINER, PRIMARY);
         b.setOnClickListener(v -> callback.run());
-        box.addView(b, box.getOrientation() == LinearLayout.HORIZONTAL ? new LinearLayout.LayoutParams(0, -2, 1) : new LinearLayout.LayoutParams(-1, -2)); return b;
+        LinearLayout.LayoutParams params = box.getOrientation() == LinearLayout.HORIZONTAL ? new LinearLayout.LayoutParams(0, -2, 1) : new LinearLayout.LayoutParams(-1, -2);
+        if (box.getOrientation() == LinearLayout.HORIZONTAL) {
+            if (box.getChildCount() > 0) params.setMarginStart(dp(8));
+        } else params.topMargin = dp(8);
+        box.addView(b, params); return b;
+    }
+    private void primary(Button button) { buttonStyle(button, PRIMARY, ON_PRIMARY); }
+    private void buttonStyle(Button button, int background, int foreground) {
+        GradientDrawable shape = new GradientDrawable(); shape.setColor(background); shape.setCornerRadius(dp(10));
+        button.setBackgroundTintList(null); button.setTextColor(foreground);
+        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22000000), shape, null));
+        button.setStateListAnimator(null);
     }
     private EditText input(LinearLayout box, String hint, boolean password) {
+        TextView label = text(hint, 13); label.setTextColor(SECONDARY); box.addView(label);
         EditText input = new EditText(this); input.setHint(hint); input.setSingleLine(true); input.setTextSize(16);
+        input.setId(View.generateViewId()); label.setLabelFor(input.getId());
+        input.setTextColor(ON_SURFACE); input.setHintTextColor(SECONDARY); input.setMinHeight(dp(52));
+        input.setPadding(dp(12), dp(12), dp(12), dp(12));
+        GradientDrawable background = new GradientDrawable(); background.setColor(BACKGROUND);
+        background.setCornerRadius(dp(10)); background.setStroke(dp(1), 0xFFD3D7DE);
+        GradientDrawable focused = new GradientDrawable(); focused.setColor(BACKGROUND);
+        focused.setCornerRadius(dp(10)); focused.setStroke(dp(2), PRIMARY);
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_focused}, focused); states.addState(new int[]{}, background);
+        input.setBackground(states);
         input.setInputType(InputType.TYPE_CLASS_TEXT | (password ? InputType.TYPE_TEXT_VARIATION_PASSWORD : InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS));
         box.addView(input, new LinearLayout.LayoutParams(-1, -2)); return input;
     }

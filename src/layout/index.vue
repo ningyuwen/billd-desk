@@ -25,36 +25,41 @@
           </div>
           <div class="ico max"></div>
         </div>
-        <div class="right">v{{ appStore.version }}</div>
       </div>
       <div class="top-right"></div>
     </div>
     <div class="sidebar">
-      <div class="user">
-        <div class="dot"></div>
-      </div>
+      <div class="brand">BilldDesk</div>
       <div class="list">
-        <div
+        <button
           class="item"
+          type="button"
           :class="{ active: route.name === routerName.remote }"
+          :aria-current="route.name === routerName.remote ? 'page' : undefined"
           @click="router.push({ name: routerName.remote })"
         >
           远程控制
-        </div>
-        <div
+        </button>
+        <button
           class="item"
+          type="button"
           :class="{ active: route.name === routerName.deviceManage }"
+          :aria-current="
+            route.name === routerName.deviceManage ? 'page' : undefined
+          "
           @click="router.push({ name: routerName.deviceManage })"
         >
-          设备列表
-        </div>
-        <div
+          最近连接
+        </button>
+        <button
           class="item"
+          type="button"
           :class="{ active: route.name === routerName.setting }"
+          :aria-current="route.name === routerName.setting ? 'page' : undefined"
           @click="router.push({ name: routerName.setting })"
         >
-          高级设置
-        </div>
+          设置
+        </button>
       </div>
     </div>
     <div class="view">
@@ -332,12 +337,6 @@ $sidebar-width: 160px;
           }
         }
       }
-      .right {
-        display: flex;
-        align-items: center;
-        color: #666;
-        font-size: 12px;
-      }
     }
     .top-right {
       display: flex;
@@ -347,50 +346,51 @@ $sidebar-width: 160px;
   }
   .sidebar {
     box-sizing: border-box;
-    padding: 60px 10px 0;
+    flex-shrink: 0;
+    padding: 72px 12px 24px;
     width: $sidebar-width;
     height: 100vh;
-    background-color: rgba($color: #fffa65, $alpha: 0.15);
-    .user {
-      position: relative;
-      margin: 0 auto;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-
-      @include setBackground('@/assets/img/billd.jpg');
-      .dot {
-        position: absolute;
-        right: 0;
-        bottom: 0;
-        width: 11px;
-        height: 11px;
-        border-radius: 50%;
-        background-color: #6cdd5b;
-      }
+    background: var(--desk-background);
+    .brand {
+      padding: 0 12px;
+      color: var(--desk-text);
+      font-size: 19px;
+      font-weight: 600;
     }
     .list {
-      padding-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 28px;
       .item {
-        margin-bottom: 5px;
-        padding: 0 10px;
-        height: 35px;
-        border-radius: 4px;
-        color: #666;
+        width: 100%;
+        min-height: 44px;
+        padding: 12px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--desk-muted);
+        text-align: left;
+        font: inherit;
         font-size: 14px;
-        line-height: 35px;
         cursor: pointer;
-        &.active,
         &:hover {
-          background-color: rgba($color: $theme-color-gold, $alpha: 0.2);
-          color: $theme-color-gold;
+          background: #e9ecf0;
+          color: var(--desk-text);
+        }
+        &.active {
+          background: var(--desk-primary-soft);
+          color: var(--desk-primary);
+          font-weight: 600;
         }
       }
     }
   }
   .view {
     box-sizing: border-box;
-    width: calc(100vw - $sidebar-width);
+    flex: 1;
+    min-width: 0;
+    background: var(--desk-surface);
   }
   .debug-area {
     position: fixed;
