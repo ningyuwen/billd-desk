@@ -3,7 +3,7 @@
   // The bundled native modules use Node-API and include both target binaries.
   npmRebuild: false,
   mac: {
-    sign: './ops/sign-mac-adhoc.cjs',
+    sign: './ops/sign-mac-local.cjs',
     notarize: false,
   },
 }

@@ -1,67 +1,70 @@
 <template>
-  <div class="pwd-wrap">
-    <div class="mask"></div>
-    <div class="content">
-      <div class="top">
-        <div class="title">接口配置</div>
-        <div
-          class="close"
-          @click="emits('close')"
-        ></div>
+  <n-modal
+    :show="true"
+    preset="card"
+    title="服务器配置"
+    class="server-dialog"
+    :style="{ width: '440px', maxWidth: 'calc(100vw - 40px)' }"
+    :bordered="false"
+    :mask-closable="false"
+    @close="emits('close')"
+    @esc="emits('close')"
+  >
+    <form
+      class="server-form"
+      @submit.prevent="handleConfirm"
+    >
+      <div class="field">
+        <label for="api-address">服务地址</label
+        ><input
+          id="api-address"
+          ref="iptRef"
+          v-model="axiosBaseUrl"
+          type="url"
+          placeholder="https://example.com/api"
+          required
+        />
       </div>
-      <div class="api-config">
-        <div class="api-config-item">
-          <div class="label">wss：</div>
-          <div class="ipt-wrap">
-            <input
-              ref="iptRef"
-              v-model="wssUrl"
-              type="text"
-              class="ipt"
-              placeholder="请输入wss地址"
-            />
-          </div>
-        </div>
-        <div class="api-config-item">
-          <div class="label">axios：</div>
-          <div class="ipt-wrap">
-            <input
-              ref="iptRef"
-              v-model="axiosBaseUrl"
-              type="text"
-              class="ipt"
-              placeholder="请输入axios地址"
-            />
-          </div>
-        </div>
-        <div class="api-config-item">
-          <div class="label">coturn：</div>
-          <div class="ipt-wrap">
-            <input
-              ref="iptRef"
-              v-model="coturnUrl"
-              type="text"
-              class="ipt"
-              placeholder="请输入coturn地址"
-            />
-          </div>
-        </div>
+      <div class="field">
+        <label for="signal-address">信令地址</label
+        ><input
+          id="signal-address"
+          v-model="wssUrl"
+          type="text"
+          placeholder="wss://example.com"
+          required
+        />
       </div>
-
-      <div
-        class="btn"
-        @click="handleConfirm"
-      >
-        确定
+      <div class="field">
+        <label for="relay-address">中继地址</label
+        ><input
+          id="relay-address"
+          v-model="coturnUrl"
+          type="text"
+          placeholder="turn:example.com:3478"
+          required
+        />
       </div>
-    </div>
-  </div>
+      <p class="hint">保存后将重新连接服务器。</p>
+      <div class="actions">
+        <n-button @click="emits('close')">取消</n-button
+        ><n-button
+          type="primary"
+          attr-type="submit"
+          >保存并重连</n-button
+        >
+      </div>
+    </form>
+  </n-modal>
 </template>
 
 <script lang="ts" setup>
+import { windowReload } from 'billd-utils';
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { AXIOS_BASEURL, COTURN_URL, WEBSOCKET_URL } from '@/constant';
+import { routerName } from '@/router';
 import {
   getAxiosBaseUrl,
   getCoturnUrl,
@@ -75,112 +78,75 @@ const wssUrl = ref('');
 const axiosBaseUrl = ref('');
 const coturnUrl = ref('');
 const iptRef = ref<HTMLInputElement>();
-
 const emits = defineEmits(['confirm', 'close']);
-
+const router = useRouter();
 onMounted(() => {
   axiosBaseUrl.value = getAxiosBaseUrl() || AXIOS_BASEURL;
   wssUrl.value = getWssUrl() || WEBSOCKET_URL;
   coturnUrl.value = getCoturnUrl() || COTURN_URL;
+  iptRef.value?.focus();
 });
-
-function handleConfirm() {
-  setAxiosBaseUrl(axiosBaseUrl.value);
-  setWssUrl(wssUrl.value);
-  setCoturnUrl(coturnUrl.value);
-  window.$message.success('设置成功！');
+async function handleConfirm() {
+  const api = axiosBaseUrl.value.trim();
+  const signal = wssUrl.value.trim();
+  const relay = coturnUrl.value.trim();
+  try {
+    if (
+      !['http:', 'https:'].includes(new URL(api).protocol) ||
+      !['ws:', 'wss:'].includes(new URL(signal).protocol) ||
+      !/^(turns?|stuns?):\S+$/i.test(relay)
+    )
+      throw new Error('address');
+  } catch {
+    window.$message.error('请填写有效的服务、信令和中继地址');
+    return;
+  }
+  setAxiosBaseUrl(api);
+  setWssUrl(signal);
+  setCoturnUrl(relay);
+  emits('confirm');
+  emits('close');
+  await router.replace({ name: routerName.remote });
+  windowReload();
 }
 </script>
 
 <style lang="scss" scoped>
-.pwd-wrap {
-  position: relative;
-  z-index: 20;
-  .mask {
-    background-color: rgba($color: #000000, $alpha: 0.3) !important;
-
-    @extend %maskBg;
+.server-form {
+  .field + .field {
+    margin-top: 16px;
   }
-  .content {
-    position: fixed;
-    top: 50%;
-    left: 50%;
+  label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--desk-muted);
+    font-size: 13px;
+  }
+  input {
     box-sizing: border-box;
-    padding: 15px 20px;
-    width: 320px;
-    height: 250px;
-    border-radius: 10px;
-    background-color: white;
-    box-shadow: 0 2px 20px rgb(0 0 0 / 20%);
-    transform: translate(-50%, -50%);
-    .top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      .title {
-        font-weight: 500;
-        font-size: 16px;
-      }
-      .close {
-        width: 14px;
-        height: 14px;
-        cursor: pointer;
-
-        @include cross(#666, 2px);
-      }
-    }
-    .api-config {
-      margin-top: 20px;
-      .api-config-item {
-        display: flex;
-        align-items: center;
-        margin-bottom: 10px;
-        .label {
-          width: 54px;
-          color: #666;
-          text-align: right;
-        }
-        .ipt-wrap {
-          position: relative;
-          width: 220px;
-          .ipt {
-            box-sizing: border-box;
-            padding: 0 15px;
-            width: 100%;
-            height: 36px;
-            outline: none;
-            border: 1px solid rgba(153, 153, 153, 0.2);
-            border-radius: 4px;
-            color: #666;
-            font-size: 16px;
-            &::placeholder {
-              color: #c2c2c2;
-              font-size: 14px;
-            }
-            &:focus {
-              border: 1px solid $theme-color-gold;
-            }
-          }
-        }
-      }
-    }
-
-    .btn {
-      margin-top: 15px;
-      margin-left: auto;
-      width: 80px;
-      height: 32px;
-      border-radius: 4px;
-      background-color: $theme-color-gold;
-      color: white;
-      text-align: center;
-      font-size: 14px;
-      line-height: 32px;
-      cursor: pointer;
-      &:hover {
-        opacity: 0.7;
-      }
-    }
+    width: 100%;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--desk-border);
+    border-radius: 8px;
+    background: var(--desk-surface);
+    color: var(--desk-text);
+    font: inherit;
+    font-size: 14px;
+  }
+  input:focus-visible {
+    outline: 2px solid var(--desk-primary);
+    outline-offset: 2px;
+  }
+  .hint {
+    margin: 16px 0;
+    color: var(--desk-muted);
+    font-size: 13px;
+  }
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
 }
 </style>

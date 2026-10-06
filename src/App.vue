@@ -33,8 +33,11 @@ const cacheStore = usePiniaCacheStore();
 const { handlesetAlwaysOnTop, handleOpenDevTools } = useIpcRendererSend();
 const themeOverrides: GlobalThemeOverrides = {
   common: {
-    primaryColor: '#ffd700',
-    primaryColorHover: '#ffd700',
+    primaryColor: '#8a5a00',
+    primaryColorHover: '#714a00',
+    primaryColorPressed: '#714a00',
+    primaryColorSuppl: '#8a5a00',
+    borderRadius: '8px',
   },
 };
 
@@ -86,7 +89,36 @@ async function getClient() {
 <style lang="scss" scoped></style>
 
 <style lang="scss">
+:root {
+  --desk-primary: #8a5a00;
+  --desk-primary-hover: #714a00;
+  --desk-primary-soft: #f5edd9;
+  --desk-background: #f5f6f8;
+  --desk-surface: #fff;
+  --desk-text: #232830;
+  --desk-muted: #59616d;
+  --desk-border: #d3d7de;
+}
 #app {
+  color: var(--desk-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   user-select: none;
+}
+.layout {
+  ::selection {
+    background: var(--desk-primary-soft);
+    color: var(--desk-text);
+  }
+  :focus-visible {
+    outline: 2px solid var(--desk-primary);
+    outline-offset: 3px;
+  }
+  input {
+    caret-color: var(--desk-primary);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #bec4cc transparent;
+  }
 }
 </style>

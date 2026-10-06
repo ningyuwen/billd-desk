@@ -1,207 +1,266 @@
 <template>
   <div class="remote-wrap">
     <div class="container">
-      <div class="local-device">
-        <div class="label">此设备</div>
-        <div class="info">
-          <div class="info-left">
-            <div class="txt">设备代码</div>
-            <div class="code-info">
-              <div class="code">{{ cacheStore.deskUserUuid }}</div>
-              <button
-                class="ico copy"
-                type="button"
-                title="复制此设备的代码和临时密码"
-                aria-label="复制此设备的代码和临时密码"
-                @click="handleCopyRemoteInfo"
-              ></button>
-              <div
-                class="ico refresh"
-                @click="handleResetDeskuuid"
-              ></div>
-            </div>
-          </div>
-          <div class="info-right">
-            <div class="txt">临时密码</div>
-            <div class="code-info">
-              <div class="code">
-                {{
-                  cacheStore.hidePwd ? '********' : cacheStore.deskUserPassword
-                }}
-              </div>
-              <div
-                class="ico eye"
-                :class="{ hide: cacheStore.hidePwd }"
-                @click="cacheStore.hidePwd = !cacheStore.hidePwd"
-              ></div>
-              <div
-                class="ico edit"
-                @click="handleUpdatePassword"
-              ></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="remote-device">
-        <div class="label">远程控制设备</div>
-        <div class="info">
+      <header class="page-heading">
+        <h1>远程控制</h1>
+        <span
+          class="connection-state"
+          :class="{ online: connectStatus === WsConnectStatusEnum.connect }"
+          role="status"
+        >
+          {{
+            connectStatus === WsConnectStatusEnum.connect
+              ? '服务器已连接'
+              : connectStatus === WsConnectStatusEnum.disconnect
+                ? '服务器未连接'
+                : '正在连接服务器…'
+          }}
+        </span>
+      </header>
+      <section
+        class="remote-device"
+        aria-labelledby="connect-heading"
+      >
+        <h2 id="connect-heading">连接其他设备</h2>
+        <label
+          class="txt"
+          for="remote-code"
+          >对方设备代码</label
+        >
+        <form
+          class="info"
+          @submit.prevent="startRemote"
+        >
           <div
             v-on-click-outside="handleClickOutside"
             class="ipt-wrap"
           >
-            <div
-              :ref="arrowDownRef"
-              class="ipt-top"
-            >
+            <div class="ipt-top">
               <input
+                id="remote-code"
                 v-model="cacheStore.remoteDeskUserUuid"
                 type="text"
                 class="ipt"
-                :placeholder="'请输入远程设备代码'"
+                placeholder="输入设备代码"
                 maxlength="8"
+                autocomplete="off"
               />
-              <div
+              <button
+                ref="arrowDownRef"
                 class="arrow-down"
                 :class="{ active: showLinkDeviceList }"
+                type="button"
+                aria-label="显示最近连接的设备"
+                :aria-expanded="showLinkDeviceList"
+                aria-controls="recent-device-options"
                 @click="showLinkDeviceList = !showLinkDeviceList"
-              ></div>
+              ></button>
             </div>
             <div class="ipt-bottom">
               <div
                 v-if="showLinkDeviceList"
+                id="recent-device-options"
                 ref="linkDeviceListRef"
                 class="link-device-list"
               >
                 <div
-                  v-for="(item, index) in cacheStore.linkDeviceList"
-                  :key="index"
+                  v-for="item in cacheStore.linkDeviceList.slice().reverse()"
+                  :key="item.remoteDeskUserUuid"
                   class="link-device-item"
-                  @click="changeRemoteDeskUserUuid(item)"
                 >
-                  <div class="left">{{ item.remoteDeskUserUuid }}</div>
-                  <div class="right">
-                    <div
-                      class="del"
-                      @click="handleDelLinkDeviceList(item)"
-                    ></div>
-                  </div>
+                  <button
+                    class="history-code"
+                    type="button"
+                    @click="
+                      changeRemoteDeskUserUuid(item);
+                      showLinkDeviceList = false;
+                    "
+                  >
+                    {{ item.remoteDeskUserUuid }}
+                  </button>
+                  <button
+                    class="history-remove"
+                    type="button"
+                    :aria-label="`移除设备 ${item.remoteDeskUserUuid} 的连接记录`"
+                    @click="handleDelLinkDeviceList(item)"
+                  >
+                    移除
+                  </button>
                 </div>
                 <div
                   v-if="!cacheStore.linkDeviceList.length"
                   class="null"
                 >
-                  暂无记录
+                  暂无连接记录
                 </div>
               </div>
             </div>
           </div>
-          <div
+          <button
             class="btn"
-            :class="{ gray: !cacheStore.remoteDeskUserUuid.length, loading }"
-            @click="startRemote"
+            type="submit"
+            :disabled="!cacheStore.remoteDeskUserUuid.trim() || loading"
+            :aria-busy="loading"
           >
-            <div v-if="!loading">连接</div>
-            <div
-              v-else
-              class="loading"
-            ></div>
-          </div>
-        </div>
-      </div>
-
-      <template v-if="!appStore.remoteDesk.size">
-        <div class="tip">已准备好连接</div>
-        <div class="link-config">
-          <div class="link-item">
-            <n-space align="center">
-              <div class="link-label">码率：</div>
+            {{ loading ? '连接中…' : '连接' }}
+          </button>
+        </form>
+        <details
+          v-if="!appStore.remoteDesk.size"
+          class="quality-settings"
+        >
+          <summary>
+            画质设置
+            <span
+              >{{ currentResolutionRatio }}P /
+              {{ currentMaxFramerate }} 帧</span
+            >
+          </summary>
+          <div class="link-config">
+            <div class="link-item">
+              <span
+                id="bitrate-label"
+                class="link-label"
+                >码率上限</span
+              >
               <n-select
                 v-model:value="currentMaxBitrate"
-                :options="maxBitrate.map((item) => ({
-                  ...item,
-                  label: item.value >= 1000 ? `${item.value / 1000} Mbps` : `${item.value} kbps`,
-                }))"
-                style="width: 160px"
+                aria-labelledby="bitrate-label"
+                :options="
+                  maxBitrate.map((item) => ({
+                    ...item,
+                    label:
+                      item.value >= 1000
+                        ? `${item.value / 1000} Mbps`
+                        : `${item.value} kbps`,
+                  }))
+                "
               />
-            </n-space>
+            </div>
+            <div class="link-item">
+              <span
+                id="framerate-label"
+                class="link-label"
+                >帧率</span
+              >
+              <n-select
+                v-model:value="currentMaxFramerate"
+                aria-labelledby="framerate-label"
+                :options="maxFramerate"
+              />
+            </div>
+            <div class="link-item">
+              <span
+                id="resolution-label"
+                class="link-label"
+                >分辨率</span
+              >
+              <n-select
+                v-model:value="currentResolutionRatio"
+                aria-labelledby="resolution-label"
+                :options="resolutionRatio"
+              />
+            </div>
+            <div class="link-item">
+              <span
+                id="video-label"
+                class="link-label"
+                >视频内容</span
+              >
+              <n-select
+                v-model:value="currentVideoContentHint"
+                aria-labelledby="video-label"
+                :options="videoContentHint"
+              />
+            </div>
+            <div class="link-item">
+              <span
+                id="audio-label"
+                class="link-label"
+                >音频内容</span
+              >
+              <n-select
+                v-model:value="currentAudioContentHint"
+                aria-labelledby="audio-label"
+                :options="audioContentHint"
+              />
+            </div>
           </div>
-          <div class="link-item">
-            <n-space>
-              <div class="link-label">帧率：</div>
-              <n-radio-group v-model:value="currentMaxFramerate">
-                <n-radio
-                  v-for="item in maxFramerate"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </n-radio>
-              </n-radio-group>
-            </n-space>
-          </div>
-          <div class="link-item">
-            <n-space>
-              <div class="link-label">分辨率：</div>
-              <n-radio-group v-model:value="currentResolutionRatio">
-                <n-radio
-                  v-for="item in resolutionRatio"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </n-radio>
-              </n-radio-group>
-            </n-space>
-          </div>
-          <div class="link-item">
-            <n-space>
-              <div class="link-label">视频内容：</div>
-              <n-radio-group v-model:value="currentVideoContentHint">
-                <n-radio
-                  v-for="item in videoContentHint"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </n-radio>
-              </n-radio-group>
-            </n-space>
-          </div>
-          <div class="link-item">
-            <n-space>
-              <div class="link-label">音频内容：</div>
-              <n-radio-group v-model:value="currentAudioContentHint">
-                <n-radio
-                  v-for="item in audioContentHint"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </n-radio>
-              </n-radio-group>
-            </n-space>
-          </div>
-        </div>
-      </template>
-
-      <div
-        v-else
-        class="list"
+        </details>
+      </section>
+      <section
+        class="local-device"
+        aria-labelledby="local-heading"
       >
-        <div
-          v-for="(item, key) in appStore.remoteDesk"
-          :key="key"
-          class="item"
-        >
-          <span>正在被{{ item[1].deskUserUuid }}控制</span>
-          <span
-            class="del"
-            @click="handleDel(item[1].sender)"
-          >
-            断开
-          </span>
+        <h2 id="local-heading">共享本机</h2>
+        <div class="info">
+          <div>
+            <div class="txt">此设备代码</div>
+            <div class="code-info">
+              <span class="code">{{
+                cacheStore.deskUserUuid || '连接中…'
+              }}</span>
+              <button
+                class="ico copy"
+                type="button"
+                title="复制设备代码和临时密码"
+                aria-label="复制设备代码和临时密码"
+                @click="handleCopyRemoteInfo"
+              ></button>
+              <button
+                class="ico refresh"
+                type="button"
+                title="重置设备代码"
+                aria-label="重置设备代码"
+                @click="handleResetDeskuuid"
+              ></button>
+            </div>
+          </div>
+          <div>
+            <div class="txt">临时密码</div>
+            <div class="code-info">
+              <span class="code password">{{
+                cacheStore.hidePwd ? '••••••••' : cacheStore.deskUserPassword
+              }}</span>
+              <button
+                class="ico eye"
+                :class="{ hide: cacheStore.hidePwd }"
+                type="button"
+                :title="cacheStore.hidePwd ? '显示密码' : '隐藏密码'"
+                :aria-label="cacheStore.hidePwd ? '显示密码' : '隐藏密码'"
+                @click="cacheStore.hidePwd = !cacheStore.hidePwd"
+              ></button>
+              <button
+                class="ico edit"
+                type="button"
+                title="修改临时密码"
+                aria-label="修改临时密码"
+                @click="handleUpdatePassword"
+              ></button>
+            </div>
+          </div>
         </div>
-      </div>
+        <div
+          v-if="appStore.remoteDesk.size"
+          class="list"
+          aria-live="polite"
+        >
+          <div
+            v-for="(item, key) in appStore.remoteDesk"
+            :key="key"
+            class="item"
+          >
+            <span>正在被 {{ item[1].deskUserUuid }} 控制</span>
+            <button
+              class="del"
+              type="button"
+              @click="handleDel(item[1].sender)"
+            >
+              断开
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
 
     <div
@@ -305,6 +364,8 @@ import {
 } from '@/utils';
 import { WebRTCClass } from '@/utils/network/webRTC';
 import PwdModalCpt from '@/views/remote/pwdModal.vue';
+
+defineOptions({ name: 'RemotePage' });
 
 const route = useRoute();
 const appStore = useAppStore();
@@ -975,297 +1036,296 @@ function handleDel(sender) {
 .remote-wrap {
   position: relative;
   box-sizing: border-box;
-  height: 100vh;
-
+  height: 100%;
+  overflow-y: auto;
   .container {
-    padding: 50px 40px 0;
-
-    .local-device {
-      padding-top: 20px;
-      .label {
-        margin-bottom: 10px;
-        font-weight: 500;
-        font-size: 24px;
-      }
-      .info {
-        display: flex;
-        justify-content: space-between;
-        .info-left {
-          .txt {
-            margin-bottom: 6px;
-            color: #999;
-          }
-          .code-info {
-            display: flex;
-            align-items: flex-end;
-            .code {
-              width: 180px;
-              height: 40px;
-              color: $theme-color-gold;
-              font-size: 30px;
-
-              user-select: text;
-            }
-            .ico {
-              margin-right: 10px;
-              width: 20px;
-              height: 20px;
-              cursor: pointer;
-
-              &.copy {
-                padding: 0;
-                border: 0;
-                background-color: transparent;
-
-                @include setBackground('@/assets/img/copy.png');
-              }
-              &.refresh {
-                @include setBackground('@/assets/img/refresh.png');
-              }
-            }
-          }
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 28px;
+  }
+  .page-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 24px;
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 600;
+    }
+  }
+  .connection-state {
+    color: var(--desk-muted);
+    font-size: 12px;
+    &.online {
+      color: #276749;
+    }
+  }
+  h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .txt {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--desk-muted);
+    font-size: 13px;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  button:focus-visible,
+  input:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--desk-primary);
+    outline-offset: 3px;
+  }
+  .remote-device {
+    position: relative;
+    z-index: 10;
+    .info {
+      display: flex;
+      gap: 12px;
+    }
+    .ipt-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+    .ipt-top {
+      position: relative;
+      .ipt {
+        box-sizing: border-box;
+        width: 100%;
+        height: 48px;
+        padding: 0 48px 0 16px;
+        border: 1px solid var(--desk-border);
+        border-radius: 10px;
+        background: var(--desk-surface);
+        color: var(--desk-text);
+        font-size: 16px;
+        caret-color: var(--desk-primary);
+        &::placeholder {
+          color: var(--desk-muted);
+          font-size: 14px;
         }
-        .info-right {
-          .txt {
-            margin-bottom: 6px;
-            color: #999;
-          }
-          .code-info {
-            display: flex;
-            align-items: flex-end;
-            .code {
-              width: 180px;
-              height: 40px;
-              color: $theme-color-gold;
-              font-size: 30px;
-
-              user-select: text;
-            }
-            .ico {
-              margin-right: 10px;
-              width: 20px;
-              height: 20px;
-              cursor: pointer;
-
-              &.eye {
-                @include setBackground('@/assets/img/view.png');
-              }
-              &.hide {
-                @include setBackground('@/assets/img/view_off.png');
-              }
-              &.edit {
-                @include setBackground('@/assets/img/edit.png');
-              }
-            }
-          }
+      }
+      .arrow-down {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        &::after {
+          display: block;
+          width: 7px;
+          height: 7px;
+          margin: 0 auto;
+          border-right: 1.5px solid var(--desk-muted);
+          border-bottom: 1.5px solid var(--desk-muted);
+          content: '';
+          transform: translateY(-2px) rotate(45deg);
+        }
+        &:hover {
+          background: var(--desk-background);
+        }
+        &.active::after {
+          transform: translateY(2px) rotate(225deg);
         }
       }
     }
-    .remote-device {
+    .ipt-bottom {
       position: relative;
-      z-index: 10;
-      padding-top: 20px;
-      .label {
-        font-weight: 500;
-        font-size: 24px;
-      }
-      .info {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 5px;
-        .ipt-wrap {
-          flex: 1;
-          .ipt-top {
-            position: relative;
-            .ipt {
-              box-sizing: border-box;
-              padding: 0 15px;
-              width: 100%;
-              height: 40px;
-              outline: none;
-              border: 1px solid rgba(153, 153, 153, 0.2);
-              border-radius: 4px;
-              color: #666;
-              font-size: 16px;
-              &::placeholder {
-                color: #c2c2c2;
-                font-size: 15px;
-              }
-              &:focus {
-                border: 1px solid $theme-color-gold;
-              }
-            }
-            .arrow-down {
-              position: absolute;
-              top: 50%;
-              right: 1px;
-              width: 24px;
-              height: 24px;
-              cursor: pointer;
-              transition: all 0.3s ease;
-              transform: translate(-50%, -50%);
-
-              @include setBackground('@/assets/img/arrow_down.png');
-              &.active {
-                transform: translate(-50%, -50%) rotate(180deg);
-              }
-            }
-          }
-          .ipt-bottom {
-            position: relative;
-
-            .link-device-list {
-              position: absolute;
-              top: 0;
-              left: 0;
-              overflow: scroll;
-              box-sizing: border-box;
-              max-height: 200px;
-              width: 100%;
-              border: 1px solid rgba(153, 153, 153, 0.2);
-              border-radius: 2px;
-              background-color: #fff;
-
-              @extend %hideScrollbar;
-              .link-device-item {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                box-sizing: border-box;
-                padding: 0 15px;
-                width: 100%;
-                height: 40px;
-                &:hover {
-                  background-color: #f8f8fb;
-                }
-                .left {
-                  font-size: 16px;
-                }
-                .right {
-                  .del {
-                    width: 15px;
-                    height: 15px;
-                    cursor: pointer;
-
-                    @include cross(#666, 1px);
-                  }
-                }
-              }
-            }
-            .null {
-              height: 40px;
-              color: #999;
-              text-align: center;
-              font-size: 16px;
-              line-height: 40px;
-            }
-          }
-        }
-
-        .btn {
+      .link-device-list {
+        position: absolute;
+        top: 8px;
+        width: 100%;
+        max-height: 216px;
+        overflow-y: auto;
+        border-radius: 10px;
+        background: var(--desk-surface);
+        box-shadow: 0 8px 24px rgb(35 40 48 / 14%);
+        .link-device-item {
           display: flex;
           align-items: center;
-          justify-content: center;
-          margin-left: 10px;
-          width: 110px;
-          height: 40px;
-          border-radius: 4px;
-          background-color: $theme-color-gold;
-          color: white;
-          font-size: 16px;
-          cursor: pointer;
-          &:hover {
-            opacity: 0.8;
-          }
-          &.gray {
-            opacity: 0.5;
-            cursor: no-drop;
-          }
-          &.loading {
-            cursor: no-drop;
-          }
-          @keyframes rotate {
-            0% {
-              transform: rotate(0);
-            }
-            50% {
-              transform: rotate(180deg);
-            }
-            100% {
-              transform: rotate(360deg);
-            }
-          }
-          .loading {
-            width: 20px;
-            height: 20px;
-            animation: rotate 1s infinite linear;
-
-            @include setBackground('@/assets/img/sync.png');
-          }
+        }
+        .history-code {
+          flex: 1;
+          min-width: 0;
+          padding: 14px 16px;
+          border: 0;
+          background: transparent;
+          color: var(--desk-text);
+          text-align: left;
+        }
+        .history-remove {
+          padding: 12px;
+          border: 0;
+          background: transparent;
+          color: var(--desk-muted);
+          font-size: 12px;
+        }
+        .link-device-item:hover {
+          background: var(--desk-background);
+        }
+        .null {
+          padding: 16px;
+          color: var(--desk-muted);
+          text-align: center;
+          font-size: 13px;
         }
       }
     }
-    .tip {
-      margin-top: 10px;
-      color: #666;
-      font-size: 12px;
-    }
-    .link-config {
-      position: relative;
-      z-index: 9;
-      margin-top: 10px;
-      .link-item {
-        margin-bottom: 4px;
-        .link-label {
-          width: 80px;
-          text-align: right;
-        }
+    .btn {
+      flex-shrink: 0;
+      min-width: 96px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--desk-primary);
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
+      &:hover:not(:disabled) {
+        background: var(--desk-primary-hover);
       }
     }
   }
-  .invite-info {
-    visibility: hidden;
-    width: 0;
-    height: 0;
+  .quality-settings {
+    margin-top: 16px;
+    summary {
+      width: fit-content;
+      padding: 4px 0;
+      color: var(--desk-primary);
+      font-size: 13px;
+      cursor: pointer;
+      span {
+        margin-left: 12px;
+        color: var(--desk-muted);
+        font-variant-numeric: tabular-nums;
+      }
+    }
+    .link-config {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 20px;
+      padding-top: 16px;
+    }
+    .link-label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--desk-muted);
+      font-size: 13px;
+    }
+  }
+  .local-device {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--desk-border);
+    .info {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .code-info {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+    }
+    .code {
+      margin-right: 8px;
+      font-size: 21px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+    .password {
+      letter-spacing: 1px;
+    }
+    .ico {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      background-color: transparent;
+      &:hover {
+        background-color: var(--desk-primary-soft);
+      }
+      &.copy {
+        @include setBackground('@/assets/img/copy.png', $size: 16px);
+      }
+      &.refresh {
+        @include setBackground('@/assets/img/refresh.png', $size: 16px);
+      }
+      &.eye {
+        @include setBackground('@/assets/img/view.png', $size: 16px);
+      }
+      &.hide {
+        @include setBackground('@/assets/img/view_off.png', $size: 16px);
+      }
+      &.edit {
+        @include setBackground('@/assets/img/edit.png', $size: 16px);
+      }
+    }
+  }
+  .list {
+    margin-top: 16px;
+    .item {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 0;
+      font-size: 13px;
+    }
+    .del {
+      padding: 6px 12px;
+      border: 0;
+      border-radius: 6px;
+      background: #fff0ed;
+      color: #b42318;
+      font-size: 13px;
+    }
   }
   .debug-info {
     position: fixed;
     right: 0;
     bottom: 0;
+    z-index: 20;
     padding-right: 5px;
     font-size: 12px;
     .link {
-      color: red;
+      color: #b42318;
       cursor: pointer;
     }
   }
-
-  .list {
-    overflow: scroll;
-    margin-top: 10px;
-    height: 170px;
-
-    @extend %customScrollbarHide;
-    &:hover {
-      @extend %customScrollbar;
+  @media (max-width: 560px) {
+    .container {
+      padding-right: 20px;
+      padding-left: 20px;
     }
-    .item {
-      display: flex;
-      align-items: center;
-      margin-bottom: 4px;
-      .del {
-        margin-left: 10px;
-        padding: 1px 8px;
-        border-radius: 3px;
-        background-color: #ffe9e5;
-        color: red;
-        font-size: 12px;
-        cursor: pointer;
-        &:hover {
-          background-color: red;
-          color: white;
-        }
-      }
+    .local-device .info,
+    .quality-settings .link-config {
+      grid-template-columns: 1fr;
+    }
+    .page-heading {
+      align-items: flex-start;
     }
   }
 }

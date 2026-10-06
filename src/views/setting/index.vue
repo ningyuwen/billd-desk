@@ -1,201 +1,89 @@
 <template>
   <div class="setting-wrap">
-    <div class="nav"></div>
     <div class="container">
-      <template v-if="ipcRenderer">
-        <div class="item">
-          <div class="label">界面设置</div>
-          <div class="value">
-            <n-space>
-              <div>主窗口置顶：</div>
-              <n-radio
-                :checked="cacheStore.isAlwaysOnTop"
-                @change="cacheStore.isAlwaysOnTop = true"
-              >
-                是
-              </n-radio>
-              <n-radio
-                :checked="!cacheStore.isAlwaysOnTop"
-                @change="cacheStore.isAlwaysOnTop = false"
-              >
-                否
-              </n-radio>
-            </n-space>
-          </div>
-        </div>
-        <div class="hr"></div>
-      </template>
-
-      <div class="item">
-        <div class="label">接口配置</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
-              @click="handleCopy(getWssUrl() || WEBSOCKET_URL)"
-            >
-              wss：{{ getWssUrl() || WEBSOCKET_URL }}
-            </span>
-          </div>
-          <div class="v-item two">
-            <span>axios：</span>
-            <span
-              class="link"
-              @click="
-                handleOpenExternal({
-                  windowId: WINDOW_ID_ENUM.remote,
-                  url: getAxiosBaseUrl() || AXIOS_BASEURL,
-                })
-              "
-            >
-              <span>{{ getAxiosBaseUrl() || AXIOS_BASEURL }}</span>
-              <span>
-                <VPIconExternalLink class="icon"></VPIconExternalLink>
-              </span>
-            </span>
-          </div>
-          <div class="v-item two">
-            <span
-              class="link"
-              @click="handleCopy(getCoturnUrl() || COTURN_URL)"
-            >
-              coturn：{{ getCoturnUrl() || COTURN_URL }}
-            </span>
-          </div>
-          <div
-            class="v-item edit"
+      <h1>设置</h1>
+      <section
+        v-if="ipcRenderer"
+        class="settings-section window-setting"
+      >
+        <span id="always-on-top-label">主窗口置顶</span>
+        <n-switch
+          v-model:value="cacheStore.isAlwaysOnTop"
+          aria-labelledby="always-on-top-label"
+        />
+      </section>
+      <section class="settings-section">
+        <div class="section-heading">
+          <h2>服务器</h2>
+          <button
+            class="text-button"
+            type="button"
             @click="showUrlModalCpt = true"
           >
-            修改
-          </div>
+            修改配置
+          </button>
         </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">作者信息</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
-              @click="handleCopy(AUTHOR_INFO.wechat)"
+        <p class="server-address">{{ getAxiosBaseUrl() || AXIOS_BASEURL }}</p>
+        <details>
+          <summary>连接详情</summary>
+          <div class="detail-row">
+            <span>信令</span>
+            <button
+              class="text-button address"
+              type="button"
+              title="复制信令地址"
+              @click="handleCopy(getWssUrl() || WEBSOCKET_URL)"
             >
-              微信：{{ AUTHOR_INFO.wechat }}
-            </span>
+              {{ getWssUrl() || WEBSOCKET_URL }}
+            </button>
           </div>
-          <div class="v-item two">
-            <span
-              class="link"
-              @click="handleCopy(AUTHOR_INFO.qq)"
+          <div class="detail-row">
+            <span>中继</span>
+            <button
+              class="text-button address"
+              type="button"
+              title="复制中继地址"
+              @click="handleCopy(getCoturnUrl() || COTURN_URL)"
             >
-              QQ：{{ AUTHOR_INFO.qq }}
-            </span>
+              {{ getCoturnUrl() || COTURN_URL }}
+            </button>
           </div>
-          <div class="v-item two">
-            <span>
-              <span>Github：</span>
-              <span
-                class="link"
-                @click="
-                  handleOpenExternal({
-                    windowId: WINDOW_ID_ENUM.remote,
-                    url: AUTHOR_INFO.github,
-                  })
-                "
-              >
-                <span>{{ AUTHOR_INFO.github }}</span>
-                <VPIconExternalLink class="icon"></VPIconExternalLink>
-              </span>
-            </span>
-          </div>
+        </details>
+      </section>
+      <section class="settings-section">
+        <div class="section-heading">
+          <h2>应用</h2>
+          <button
+            v-if="ipcRenderer"
+            class="text-button"
+            type="button"
+            :disabled="checkingUpdate"
+            @click="handleDeskVersionCheck"
+          >
+            {{ checkingUpdate ? '正在检查…' : '检查更新' }}
+          </button>
         </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">网页版体验</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
-              @click="
-                handleOpenExternal({
-                  windowId: WINDOW_ID_ENUM.remote,
-                  url: WEB_DESK_URL,
-                })
-              "
-            >
-              <span>{{ WEB_DESK_URL }}</span>
-              <VPIconExternalLink class="icon"></VPIconExternalLink>
-            </span>
-          </div>
+        <div class="application-row">
+          <span class="version">当前版本 {{ appStore.version }}</span>
+          <button
+            class="text-button"
+            type="button"
+            @click="
+              handleOpenExternal({
+                windowId: WINDOW_ID_ENUM.remote,
+                url: WEB_DESK_URL,
+              })
+            "
+          >
+            打开网页版 <VPIconExternalLink class="icon" />
+          </button>
         </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">私有化部署</div>
-        <div class="value">
-          <div class="v-item one">
-            <span
-              class="link"
-              @click="
-                handleOpenExternal({
-                  windowId: WINDOW_ID_ENUM.remote,
-                  url: COMMON_URL.privatizationDeployment,
-                })
-              "
-            >
-              <span>了解详情</span>
-              <VPIconExternalLink class="icon"></VPIconExternalLink>
-            </span>
-          </div>
-        </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">下载客户端</div>
-        <div class="value">
-          <div class="v-item one">
-            <div class="client-list">
-              <div
-                v-for="(item, index) in clientList"
-                :key="index"
-                class="client-btn"
-                @click="
-                  jumpToDownload({
-                    windowId: WINDOW_ID_ENUM.remote,
-                    url: item.url,
-                  })
-                "
-              >
-                <div class="name">{{ item.label }}</div>
-                <div class="ext">{{ item.ext }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="hr"></div>
-      <div class="item">
-        <div class="label">关于{{ PRODUCT_NAME }}</div>
-        <div class="value">
-          <div class="v-item one">
-            <span>
-              当前版本：v{{ appStore.version }}（{{ appStore.lastBuildDate }}）
-            </span>
-            <span
-              v-if="ipcRenderer"
-              class="btn"
-              @click="handleDeskVersionCheck"
-            >
-              检查更新
-            </span>
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
     <UrlModalCpt
       v-if="showUrlModalCpt"
       @close="showUrlModalCpt = false"
-    ></UrlModalCpt>
+    />
   </div>
 </template>
 
@@ -205,11 +93,8 @@ import { ref, watch } from 'vue';
 
 import { fetchDeskVersionCheck } from '@/api/deskVersion';
 import {
-  AUTHOR_INFO,
   AXIOS_BASEURL,
-  COMMON_URL,
   COTURN_URL,
-  PRODUCT_NAME,
   WEB_DESK_URL,
   WEBSOCKET_URL,
   WINDOW_ID_ENUM,
@@ -229,21 +114,13 @@ import UrlModalCpt from './urlModal.vue';
 const appStore = useAppStore();
 const cacheStore = usePiniaCacheStore();
 const showUrlModalCpt = ref(false);
+const checkingUpdate = ref(false);
 const { handleOpenExternal, handlesetAlwaysOnTop } = useIpcRendererSend();
-
-const clientList = ref<
-  {
-    label: string;
-    ext: string;
-    url: string;
-  }[]
->([]);
 
 function handleCopy(str) {
   copyToClipBoard(str);
-  window.$message.success('复制成功！');
+  window.$message.success('已复制地址');
 }
-
 watch(
   () => cacheStore.isAlwaysOnTop,
   () => {
@@ -255,63 +132,25 @@ watch(
   { immediate: true }
 );
 
-watch(
-  () => appStore.deskVersionInfo,
-  (newval) => {
-    if (newval) {
-      Object.keys(newval).forEach((item) => {
-        if (item.indexOf('download_linux') !== -1) {
-          const arr = item.split('_');
-          const bit = arr[2] === 'arm' ? 'arm' : `${arr[2]}bit`;
-          clientList.value.push({
-            label: `${arr[1]}(${bit})`,
-            ext: arr[3],
-            url: newval[item],
-          });
-        }
-        if (item.indexOf('download_windows') !== -1) {
-          const arr = item.split('_');
-          const bit = arr[2] === 'arm' ? 'arm' : `${arr[2]}bit`;
-          clientList.value.push({
-            label: `${arr[1]}(${bit})`,
-            ext: arr[3],
-            url: newval[item],
-          });
-        }
-        if (item.indexOf('download_macos') !== -1) {
-          const arr = item.split('_');
-          clientList.value.push({
-            label: `${arr[1]}`,
-            ext: arr[2],
-            url: newval[item],
-          });
-        }
-      });
-    }
-  },
-  { immediate: true, deep: true }
-);
-
-function jumpToDownload({ windowId, url }) {
-  if (!url || url === '') {
-    window.$message.info('敬请期待！');
-    return;
-  }
-  handleOpenExternal({
-    windowId,
-    url,
-  });
-}
-
 async function handleDeskVersionCheck() {
-  const res = await fetchDeskVersionCheck(appStore.version);
-  if (res.code === 200 && res.data) {
-    appStore.updateModalInfo = res.data;
-    if (appStore.updateModalInfo?.checkUpdate === 2) {
-      window.$message.success('当前不需要更新');
-    } else if (appStore.updateModalInfo?.isUpdate === 2) {
-      window.$message.success('当前是最新版本');
+  if (checkingUpdate.value) return;
+  checkingUpdate.value = true;
+  try {
+    const res = await fetchDeskVersionCheck(appStore.version);
+    if (res.code !== 200 || !res.data) {
+      window.$message.error('检查更新失败，请稍后重试');
+      return;
     }
+    appStore.updateModalInfo = res.data;
+    if (
+      appStore.updateModalInfo?.checkUpdate === 2 ||
+      appStore.updateModalInfo?.isUpdate === 2
+    )
+      window.$message.success('当前是最新版本');
+  } catch {
+    window.$message.error('无法连接更新服务，请稍后重试');
+  } finally {
+    checkingUpdate.value = false;
   }
 }
 </script>
@@ -319,107 +158,107 @@ async function handleDeskVersionCheck() {
 <style lang="scss" scoped>
 .setting-wrap {
   box-sizing: border-box;
-  height: 100vh;
-  .nav {
-    height: $top-system-bar-height;
-  }
+  height: 100%;
+  overflow-y: auto;
   .container {
-    overflow: scroll;
-    padding: 0 40px;
-    height: calc(100vh - $top-system-bar-height);
-
-    @extend %customScrollbarHide;
-    &:hover {
-      @extend %customScrollbar;
-    }
-    .item {
-      display: flex;
-      margin-bottom: 20px;
-      .icon {
-        margin-left: 5px;
-        width: 12px;
-        height: 12px;
-        vertical-align: middle;
-      }
-      .label {
-        margin-right: 20px;
-        width: 100px;
-        text-align: right;
-        font-weight: 500;
-        font-size: 15px;
-      }
-      .value {
-        flex: 1;
-        color: #666;
-        font-size: 14px;
-        .v-item {
-          margin-bottom: 5px;
-
-          .link {
-            cursor: pointer;
-          }
-          &.edit {
-            font-size: 13px;
-            cursor: pointer;
-          }
-          &.one {
-            .btn {
-              padding: 2px 10px;
-              border: 1px solid #bec3ca;
-              border-radius: 20px;
-              font-size: 12px;
-              cursor: pointer;
-
-              user-select: none;
-            }
-            .client-list {
-              display: flex;
-              flex-wrap: wrap;
-              .client-btn {
-                display: flex;
-                margin-right: 10px;
-                margin-bottom: 10px;
-                height: 30px;
-                border-radius: 5px;
-                background: #448ccb;
-                color: white;
-                font-size: 14px;
-                line-height: 30px;
-                cursor: pointer;
-
-                user-select: none;
-                .name {
-                  width: 120px;
-                  text-align: center;
-                }
-                .ext {
-                  width: 40px;
-                  background-color: #0000005c;
-                  text-align: center;
-                }
-              }
-            }
-          }
-          &.two {
-            .btn {
-              margin-right: 10px;
-              padding: 2px 10px;
-              border: 1px solid #bec3ca;
-              border-radius: 20px;
-              font-size: 12px;
-              cursor: pointer;
-
-              user-select: none;
-            }
-          }
-        }
-      }
-    }
-    .hr {
-      margin: 20px 0;
-      width: 100%;
-      height: 1px;
-      background-color: #ebedf1;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 28px;
+  }
+  h1 {
+    margin: 0 0 20px;
+    font-size: 22px;
+    font-weight: 600;
+  }
+  h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  button {
+    font: inherit;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .settings-section {
+    padding: 18px 0;
+    border-top: 1px solid var(--desk-border);
+  }
+  .section-heading,
+  .window-setting,
+  .application-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .window-setting {
+    padding-top: 0;
+    border: 0;
+    font-size: 14px;
+  }
+  .text-button {
+    padding: 4px 0;
+    border: 0;
+    background: transparent;
+    color: var(--desk-primary);
+    text-align: left;
+    font-size: 13px;
+  }
+  .text-button:hover:not(:disabled) {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .server-address {
+    margin: 12px 0 0;
+    color: var(--desk-muted);
+    font-size: 14px;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .icon {
+    width: 12px;
+    height: 12px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+  details {
+    margin-top: 12px;
+  }
+  summary {
+    width: fit-content;
+    padding: 4px 0;
+    color: var(--desk-muted);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .detail-row {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-top: 8px;
+    color: var(--desk-muted);
+    font-size: 13px;
+  }
+  .address {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+  .application-row {
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  .version {
+    color: var(--desk-muted);
+    font-size: 14px;
+  }
+  @media (max-width: 560px) {
+    .container {
+      padding: 20px;
     }
   }
 }

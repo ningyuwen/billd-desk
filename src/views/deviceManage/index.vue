@@ -1,25 +1,32 @@
 <template>
-  <div class="setting-wrap">
-    <div class="nav"></div>
+  <div class="devices-wrap">
     <div class="container">
-      <div class="label">最近连接</div>
-      <div v-if="!cacheStore.linkDeviceList.length">暂无记录</div>
+      <h1>最近连接</h1>
+      <div
+        v-if="!cacheStore.linkDeviceList.length"
+        class="empty-state"
+      >
+        <h2>暂无连接记录</h2>
+        <p>连接过的设备会显示在这里。</p>
+      </div>
       <div
         v-else
         class="link-device-list"
       >
         <div
-          v-for="(item, index) in cacheStore.linkDeviceList"
-          :key="index"
+          v-for="item in cacheStore.linkDeviceList.slice().reverse()"
+          :key="item.remoteDeskUserUuid"
           class="link-device-item"
         >
-          <div class="left">{{ item.remoteDeskUserUuid }}</div>
-          <div class="right">
-            <div
-              class="del"
-              @click="handleDelLinkDeviceList(item)"
-            ></div>
-          </div>
+          <span class="device-code">{{ item.remoteDeskUserUuid }}</span>
+          <button
+            class="remove"
+            type="button"
+            :aria-label="`移除设备 ${item.remoteDeskUserUuid} 的连接记录`"
+            @click="handleDelLinkDeviceList(item)"
+          >
+            移除记录
+          </button>
         </div>
       </div>
     </div>
@@ -39,63 +46,67 @@ function handleDelLinkDeviceList(item) {
 </script>
 
 <style lang="scss" scoped>
-.setting-wrap {
+.devices-wrap {
   box-sizing: border-box;
-  height: 100vh;
-  .nav {
-    height: $top-system-bar-height;
-  }
+  height: 100%;
+  overflow-y: auto;
   .container {
-    overflow: scroll;
-    padding: 0 40px;
-    height: calc(100vh - $top-system-bar-height);
-
-    @extend %customScrollbarHide;
-    &:hover {
-      @extend %customScrollbar;
-    }
-
-    .label {
-      margin-bottom: 10px;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 28px;
+  }
+  h1 {
+    margin: 0 0 24px;
+    font-size: 22px;
+    font-weight: 600;
+  }
+  .empty-state {
+    padding: 24px 0;
+    border-top: 1px solid var(--desk-border);
+    h2 {
+      margin: 0 0 8px;
+      font-size: 17px;
       font-weight: 500;
-      font-size: 16px;
     }
-
-    .link-device-list {
-      position: relative;
-      overflow: scroll;
-      box-sizing: border-box;
-      max-height: 200px;
-      width: 100%;
-      border: 1px solid rgba(153, 153, 153, 0.2);
-      border-radius: 2px;
-      background-color: #fff;
-
-      @extend %hideScrollbar;
-      .link-device-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        box-sizing: border-box;
-        padding: 0 15px;
-        width: 100%;
-        height: 40px;
-        &:hover {
-          background-color: #f8f8fb;
-        }
-        .left {
-          font-size: 16px;
-        }
-        .right {
-          .del {
-            width: 15px;
-            height: 15px;
-            cursor: pointer;
-
-            @include cross(#666, 1px);
-          }
-        }
-      }
+    p {
+      margin: 0;
+      color: var(--desk-muted);
+      font-size: 14px;
+    }
+  }
+  .link-device-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 0;
+    border-top: 1px solid var(--desk-border);
+  }
+  .device-code {
+    font-size: 18px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    user-select: text;
+  }
+  .remove {
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--desk-muted);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    &:hover {
+      background: #fff0ed;
+      color: #b42318;
+    }
+  }
+  @media (max-width: 720px) {
+    .container {
+      padding-right: 20px;
+      padding-left: 20px;
     }
   }
 }
