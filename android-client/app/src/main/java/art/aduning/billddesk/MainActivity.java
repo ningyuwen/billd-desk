@@ -108,7 +108,9 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         passwordRow.addView(connectionPassword, new LinearLayout.LayoutParams(0, -2, 1));
         passwordButton = action(passwordRow, "显示", () -> { showPassword = !showPassword; update(); });
         passwordButton.setLayoutParams(new LinearLayout.LayoutParams(-2, dp(48)));
-        LinearLayout identityActions = row(); own.addView(identityActions);
+        LinearLayout identityActions = row();
+        LinearLayout.LayoutParams identityActionsLayout = new LinearLayout.LayoutParams(-1, -2);
+        identityActionsLayout.topMargin = dp(12); own.addView(identityActions, identityActionsLayout);
         action(identityActions, "复制连接信息", () -> {
             if (engine.uuid.isEmpty()) return;
             ClipData clip = ClipData.newPlainText("BilldDesk", "设备代码：" + engine.uuid + "\n连接密码：" + engine.password);
