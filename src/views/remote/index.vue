@@ -11,7 +11,9 @@
           {{
             connectStatus === WsConnectStatusEnum.connect
               ? '服务器已连接'
-              : '服务器未连接'
+              : connectStatus === WsConnectStatusEnum.disconnect
+                ? '服务器未连接'
+                : '正在连接服务器…'
           }}
         </span>
       </header>
@@ -19,7 +21,7 @@
         class="remote-device"
         aria-labelledby="connect-heading"
       >
-        <h2 id="connect-heading">连接设备</h2>
+        <h2 id="connect-heading">连接其他设备</h2>
         <label
           class="txt"
           for="remote-code"
@@ -62,8 +64,8 @@
                 class="link-device-list"
               >
                 <div
-                  v-for="(item, index) in cacheStore.linkDeviceList"
-                  :key="index"
+                  v-for="item in cacheStore.linkDeviceList.slice().reverse()"
+                  :key="item.remoteDeskUserUuid"
                   class="link-device-item"
                 >
                   <button
@@ -103,25 +105,6 @@
             {{ loading ? '连接中…' : '连接' }}
           </button>
         </form>
-        <div
-          v-if="cacheStore.linkDeviceList.length"
-          class="recent-devices"
-        >
-          <span class="txt">最近连接</span>
-          <button
-            v-for="item in cacheStore.linkDeviceList.slice(-3).reverse()"
-            :key="item.remoteDeskUserUuid"
-            type="button"
-            :disabled="loading"
-            :aria-label="`连接设备 ${item.remoteDeskUserUuid}`"
-            @click="
-              changeRemoteDeskUserUuid(item);
-              startRemote();
-            "
-          >
-            {{ item.remoteDeskUserUuid }}
-          </button>
-        </div>
         <details
           v-if="!appStore.remoteDesk.size"
           class="quality-settings"
@@ -381,6 +364,8 @@ import {
 } from '@/utils';
 import { WebRTCClass } from '@/utils/network/webRTC';
 import PwdModalCpt from '@/views/remote/pwdModal.vue';
+
+defineOptions({ name: 'RemotePage' });
 
 const route = useRoute();
 const appStore = useAppStore();
@@ -1051,12 +1036,12 @@ function handleDel(sender) {
 .remote-wrap {
   position: relative;
   box-sizing: border-box;
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   .container {
     max-width: 880px;
     margin: 0 auto;
-    padding: calc(#{$top-system-bar-height} + 16px) 32px 24px;
+    padding: 24px 28px;
   }
   .page-heading {
     display: flex;
@@ -1067,7 +1052,7 @@ function handleDel(sender) {
     margin-bottom: 24px;
     h1 {
       margin: 0;
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 600;
     }
   }
@@ -1079,8 +1064,8 @@ function handleDel(sender) {
     }
   }
   h2 {
-    margin: 0 0 16px;
-    font-size: 17px;
+    margin: 0 0 12px;
+    font-size: 15px;
     font-weight: 600;
   }
   .txt {
@@ -1217,24 +1202,6 @@ function handleDel(sender) {
       }
     }
   }
-  .recent-devices {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-top: 12px;
-    .txt {
-      margin: 0 4px 0 0;
-    }
-    button {
-      padding: 8px 12px;
-      border: 0;
-      border-radius: 6px;
-      background: var(--desk-primary-soft);
-      color: var(--desk-primary);
-      font-size: 13px;
-    }
-  }
   .quality-settings {
     margin-top: 16px;
     summary {
@@ -1263,8 +1230,8 @@ function handleDel(sender) {
     }
   }
   .local-device {
-    margin-top: 24px;
-    padding-top: 24px;
+    margin-top: 28px;
+    padding-top: 20px;
     border-top: 1px solid var(--desk-border);
     .info {
       display: grid;
@@ -1279,7 +1246,7 @@ function handleDel(sender) {
     }
     .code {
       margin-right: 8px;
-      font-size: 23px;
+      font-size: 21px;
       font-weight: 600;
       font-variant-numeric: tabular-nums;
       overflow-wrap: anywhere;
@@ -1348,7 +1315,7 @@ function handleDel(sender) {
       cursor: pointer;
     }
   }
-  @media (max-width: 720px) {
+  @media (max-width: 560px) {
     .container {
       padding-right: 20px;
       padding-left: 20px;

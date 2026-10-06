@@ -48,16 +48,16 @@ function handleDelLinkDeviceList(item) {
 <style lang="scss" scoped>
 .devices-wrap {
   box-sizing: border-box;
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   .container {
     max-width: 880px;
     margin: 0 auto;
-    padding: calc(#{$top-system-bar-height} + 16px) 32px 24px;
+    padding: 24px 28px;
   }
   h1 {
     margin: 0 0 24px;
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 600;
   }
   .empty-state {

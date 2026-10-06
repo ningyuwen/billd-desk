@@ -1,39 +1,56 @@
 <template>
-  <div class="pwd-wrap">
-    <div class="mask"></div>
-    <div class="content">
-      <div class="top">
-        <div class="title">连接密码</div>
-        <div
-          class="close"
-          @click="emits('close')"
-        ></div>
-      </div>
-      <div class="uuid">设备代码：{{ uuid }}</div>
-      <div class="err-msg">{{ errMsg }}</div>
-      <div class="ipt-wrap">
+  <n-modal
+    :show="true"
+    preset="card"
+    title="连接设备"
+    :style="{ width: '380px', maxWidth: 'calc(100vw - 40px)' }"
+    :bordered="false"
+    :mask-closable="false"
+    @close="emits('close')"
+    @esc="emits('close')"
+  >
+    <form
+      class="password-form"
+      @submit.prevent="handleConfirm"
+    >
+      <p class="device-code">{{ uuid }}</p>
+      <label for="connection-password">连接密码</label>
+      <div class="password-field">
         <input
+          id="connection-password"
           ref="iptRef"
           v-model="password"
           :type="hidePwd ? 'password' : 'text'"
-          class="ipt"
           maxlength="12"
-          placeholder="请输入连接密码"
+          autocomplete="off"
+          placeholder="输入对方的连接密码"
         />
-        <div
-          class="ico eye"
-          :class="{ hide: hidePwd }"
+        <button
+          type="button"
+          :aria-label="hidePwd ? '显示连接密码' : '隐藏连接密码'"
           @click="hidePwd = !hidePwd"
-        ></div>
+        >
+          {{ hidePwd ? '显示' : '隐藏' }}
+        </button>
       </div>
-      <div
-        class="btn"
-        @click="handleConfirm"
+      <p
+        v-if="errMsg"
+        class="error"
+        role="alert"
       >
-        确定
+        {{ errMsg }}
+      </p>
+      <div class="actions">
+        <n-button @click="emits('close')">取消</n-button
+        ><n-button
+          type="primary"
+          attr-type="submit"
+          :disabled="!password"
+          >连接</n-button
+        >
       </div>
-    </div>
-  </div>
+    </form>
+  </n-modal>
 </template>
 
 <script lang="ts" setup>
@@ -42,142 +59,82 @@ import { onMounted, ref } from 'vue';
 const hidePwd = ref(true);
 const password = ref('');
 const iptRef = ref<HTMLInputElement>();
-
 const props = withDefaults(
-  defineProps<{
-    uuid?: string;
-    pwd?: string;
-    errMsg: string;
-  }>(),
-  {
-    uuid: '',
-    pwd: '',
-    errMsg: '',
-  }
+  defineProps<{ uuid?: string; pwd?: string; errMsg: string }>(),
+  { uuid: '', pwd: '', errMsg: '' }
 );
-
 const emits = defineEmits(['confirm', 'close']);
-
 onMounted(() => {
   password.value = props.pwd;
   iptRef.value?.focus();
 });
-
 function handleConfirm() {
-  if (
-    password.value &&
-    password.value.length > 6 &&
-    password.value.length < 12
-  ) {
+  if (password.value.length >= 6 && password.value.length <= 12)
     emits('confirm', password.value);
-  } else {
-    window.$message.warning('密码长度要求6-12位！');
-  }
+  else window.$message.warning('连接密码长度应为 6–12 位');
 }
 </script>
 
 <style lang="scss" scoped>
-.pwd-wrap {
-  position: relative;
-  z-index: 20;
-  .mask {
-    background-color: rgba($color: #000000, $alpha: 0.3) !important;
-
-    @extend %maskBg;
+.password-form {
+  .device-code {
+    margin: 0 0 20px;
+    color: var(--desk-text);
+    font-size: 20px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
-  .content {
-    position: fixed;
-    top: 50%;
-    left: 50%;
+  label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--desk-muted);
+    font-size: 13px;
+  }
+  .password-field {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--desk-border);
+    border-radius: 8px;
+  }
+  .password-field:focus-within {
+    outline: 2px solid var(--desk-primary);
+    outline-offset: 2px;
+  }
+  input {
     box-sizing: border-box;
-    padding: 15px 20px;
-    width: 320px;
-    height: 220px;
-    border-radius: 10px;
-    background-color: white;
-    box-shadow: 0 2px 20px rgb(0 0 0 / 20%);
-    transform: translate(-50%, -50%);
-    .top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      .title {
-        font-weight: 500;
-        font-size: 16px;
-      }
-      .close {
-        width: 14px;
-        height: 14px;
-        cursor: pointer;
-
-        @include cross(#666, 2px);
-      }
-    }
-    .uuid {
-      margin-top: 10px;
-      color: #666;
-    }
-    .err-msg {
-      color: red;
-      height: 26px;
-      margin-top: 10px;
-    }
-    .ipt-wrap {
-      position: relative;
-      margin-top: 10px;
-      width: 100%;
-      .ipt {
-        box-sizing: border-box;
-        padding: 0 15px;
-        width: 100%;
-        height: 40px;
-        outline: none;
-        border: 1px solid rgba(153, 153, 153, 0.2);
-        border-radius: 4px;
-        color: #666;
-        font-size: 16px;
-        &::placeholder {
-          color: #c2c2c2;
-          font-size: 14px;
-        }
-        &:focus {
-          border: 1px solid $theme-color-gold;
-        }
-      }
-      .ico {
-        position: absolute;
-        top: 50%;
-        right: 2px;
-        margin-right: 10px;
-        width: 20px;
-        height: 20px;
-        cursor: pointer;
-        transform: translate(0%, -50%);
-
-        &.eye {
-          @include setBackground('@/assets/img/view.png');
-        }
-        &.hide {
-          @include setBackground('@/assets/img/view_off.png');
-        }
-      }
-    }
-    .btn {
-      margin-top: 15px;
-      margin-left: auto;
-      width: 80px;
-      height: 32px;
-      border-radius: 4px;
-      background-color: $theme-color-gold;
-      color: white;
-      text-align: center;
-      font-size: 14px;
-      line-height: 32px;
-      cursor: pointer;
-      &:hover {
-        opacity: 0.7;
-      }
-    }
+    width: 100%;
+    min-width: 0;
+    height: 42px;
+    padding: 0 12px;
+    border: 0;
+    outline: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--desk-text);
+    font: inherit;
+  }
+  .password-field button {
+    flex-shrink: 0;
+    align-self: stretch;
+    padding: 0 12px;
+    border: 0;
+    background: transparent;
+    color: var(--desk-primary);
+    font: inherit;
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .error {
+    margin: 12px 0 0;
+    color: #b42318;
+    font-size: 13px;
+  }
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
   }
 }
 </style>

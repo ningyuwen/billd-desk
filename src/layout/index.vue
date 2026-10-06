@@ -63,7 +63,11 @@
       </div>
     </div>
     <div class="view">
-      <RouterView></RouterView>
+      <RouterView v-slot="{ Component }">
+        <KeepAlive include="RemotePage">
+          <component :is="Component" />
+        </KeepAlive>
+      </RouterView>
     </div>
     <div
       class="debug-area"
@@ -269,7 +273,7 @@ const moving = (e: MouseEvent) => {
 </script>
 
 <style lang="scss" scoped>
-$sidebar-width: 160px;
+$sidebar-width: 144px;
 .layout {
   display: flex;
   box-sizing: border-box;
@@ -283,6 +287,7 @@ $sidebar-width: 160px;
     box-sizing: border-box;
     width: 100vw;
     height: $top-system-bar-height;
+    background: var(--desk-background);
     &.drag {
       -webkit-app-region: drag;
     }
@@ -347,21 +352,21 @@ $sidebar-width: 160px;
   .sidebar {
     box-sizing: border-box;
     flex-shrink: 0;
-    padding: 72px 12px 24px;
+    padding: 68px 12px 24px;
     width: $sidebar-width;
     height: 100vh;
     background: var(--desk-background);
     .brand {
       padding: 0 12px;
       color: var(--desk-text);
-      font-size: 19px;
+      font-size: 18px;
       font-weight: 600;
     }
     .list {
       display: flex;
       flex-direction: column;
       gap: 8px;
-      padding-top: 28px;
+      padding-top: 24px;
       .item {
         width: 100%;
         min-height: 44px;
@@ -390,6 +395,8 @@ $sidebar-width: 160px;
     box-sizing: border-box;
     flex: 1;
     min-width: 0;
+    height: calc(100vh - #{$top-system-bar-height});
+    margin-top: $top-system-bar-height;
     background: var(--desk-surface);
   }
   .debug-area {

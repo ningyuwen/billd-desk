@@ -38,7 +38,7 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
     private ScrollView sideToolbarScroll;
     private HorizontalScrollView bottomToolbarScroll;
     private FrameLayout videoContainer;
-    private LinearLayout root, homePanel, dashboard, remotePanel, savedDeviceCard, savedDeviceRows, toolbar, navigationButtons;
+    private LinearLayout root, homePanel, dashboard, connectionColumn, shareColumn, remotePanel, savedDeviceCard, savedDeviceRows, toolbar, navigationButtons;
     private SurfaceViewRenderer renderer;
     private RemoteViewport remoteViewport;
     private VideoTrack rendered;
@@ -74,28 +74,35 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         state.setPadding(dp(20), 0, dp(20), dp(16)); homePanel.addView(state);
         dashboardScroll = new ScrollView(this); dashboardScroll.setFillViewport(true);
         dashboard = column(); dashboard.setPadding(dp(16), 0, dp(16), dp(20)); dashboardScroll.addView(dashboard);
+        connectionColumn = column(); shareColumn = column();
+        dashboard.addView(connectionColumn); dashboard.addView(shareColumn); layoutHomeDashboard();
         homePanel.addView(dashboardScroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        LinearLayout controller = card("连接设备");
+        LinearLayout controller = card("连接设备", connectionColumn);
         remoteCode = input(controller, "对方设备代码", false);
+        controller.removeView(remoteCode);
+        LinearLayout connectRow = row(); connectRow.setGravity(Gravity.CENTER_VERTICAL); controller.addView(connectRow);
+        connectRow.addView(remoteCode, new LinearLayout.LayoutParams(0, dp(52), 1));
         remoteCode.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         Runnable connectDevice = () -> {
             String target = remoteCode.getText().toString().trim();
             if (target.isEmpty()) { remoteCode.setError("请输入对方设备代码"); return; }
             connectionDialog(target);
         };
-        primary(action(controller, "连接", connectDevice));
+        Button connectButton = action(connectRow, "连接", connectDevice); primary(connectButton);
+        LinearLayout.LayoutParams connectLayout = new LinearLayout.LayoutParams(dp(80), dp(52));
+        connectLayout.setMarginStart(dp(8)); connectButton.setLayoutParams(connectLayout);
         remoteCode.setOnEditorActionListener((view, actionId, event) -> {
             if (actionId != android.view.inputmethod.EditorInfo.IME_ACTION_GO) return false;
             connectDevice.run(); return true;
         });
         viewerState = text("", 13); viewerState.setTextColor(SECONDARY); controller.addView(viewerState);
-        savedDeviceCard = card("常用设备");
+        savedDeviceCard = card("常用设备", connectionColumn);
         savedDeviceRows = column(); savedDeviceCard.addView(savedDeviceRows);
 
-        LinearLayout own = card("共享此手机");
+        LinearLayout own = card("共享此手机", shareColumn);
         TextView codeLabel = text("此设备代码", 13); codeLabel.setTextColor(SECONDARY); own.addView(codeLabel);
-        identity = text("连接中…", 28); identity.setTypeface(Typeface.MONOSPACE, Typeface.BOLD); own.addView(identity);
+        identity = text("连接中…", 24); identity.setTypeface(null, Typeface.BOLD); own.addView(identity);
         LinearLayout passwordRow = row(); passwordRow.setGravity(Gravity.CENTER_VERTICAL); own.addView(passwordRow);
         connectionPassword = text("连接密码：••••••••", 14);
         passwordRow.addView(connectionPassword, new LinearLayout.LayoutParams(0, -2, 1));
@@ -298,7 +305,7 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         super.onWindowFocusChanged(hasFocus); if (hasFocus && fullscreen) applyDisplayMode();
     }
     @Override public void onConfigurationChanged(Configuration configuration) {
-        super.onConfigurationChanged(configuration); layoutRemoteControls(); if (fullscreen) root.requestApplyInsets();
+        super.onConfigurationChanged(configuration); layoutHomeDashboard(); layoutRemoteControls(); if (fullscreen) root.requestApplyInsets();
     }
     @Override public void onBackPressed() {
         if (fullscreen) setFullscreen(false); else super.onBackPressed();
@@ -337,7 +344,7 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
             LinearLayout device = row(); device.setGravity(Gravity.CENTER_VERTICAL);
             LinearLayout.LayoutParams deviceLayout = new LinearLayout.LayoutParams(-1, -2);
             deviceLayout.topMargin = dp(8); savedDeviceRows.addView(device, deviceLayout);
-            TextView label = text(code, 18); label.setTypeface(Typeface.MONOSPACE);
+            TextView label = text(code, 17);
             device.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
             LinearLayout actions = row(); device.addView(actions);
             Button connect = action(actions, "连接", () -> {
@@ -467,15 +474,24 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
             } catch (IllegalArgumentException e) { toast(e.getMessage()); }
         })); dialog.show();
     }
+    private void layoutHomeDashboard() {
+        boolean wide = getResources().getConfiguration().screenWidthDp >= 600;
+        dashboard.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        connectionColumn.setLayoutParams(wide ? new LinearLayout.LayoutParams(0, -2, 1)
+                : new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams shareLayout = wide ? new LinearLayout.LayoutParams(0, -2, 1)
+                : new LinearLayout.LayoutParams(-1, -2);
+        shareLayout.setMarginStart(wide ? dp(12) : 0); shareColumn.setLayoutParams(shareLayout);
+    }
     private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); return l; }
     private TextView text(String value, int size) {
         TextView t = new TextView(this); t.setText(value); t.setTextColor(ON_SURFACE); t.setTextSize(size); t.setPadding(0, dp(4), 0, dp(4)); return t;
     }
-    private LinearLayout card(String title) {
-        LinearLayout box = column(); box.setPadding(dp(20), dp(16), dp(20), dp(20));
+    private LinearLayout card(String title, LinearLayout parent) {
+        LinearLayout box = column(); box.setPadding(dp(16), dp(12), dp(16), dp(16));
         GradientDrawable bg = new GradientDrawable(); bg.setColor(SURFACE); bg.setCornerRadius(dp(16)); box.setBackground(bg);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.bottomMargin = dp(16); dashboard.addView(box, params);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.bottomMargin = dp(12); parent.addView(box, params);
         TextView heading = text(title, 17); heading.setTypeface(null, Typeface.BOLD); box.addView(heading); return box;
     }
     private Button action(LinearLayout box, String title, Runnable callback) {
