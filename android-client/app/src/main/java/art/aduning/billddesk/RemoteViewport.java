@@ -8,7 +8,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 import org.webrtc.SurfaceViewRenderer;
 
-/** Two fingers navigate the local picture; one finger controls the remote device. */
+/** Two fingers zoom; swipes pan when zoomed or move the remote cursor, long presses start remote drags. */
 final class RemoteViewport implements View.OnTouchListener {
     interface RemoteInput {
         int frameWidth();
@@ -23,9 +23,9 @@ final class RemoteViewport implements View.OnTouchListener {
     private final RectF picture = new RectF();
     private float zoom = 1, offsetX, offsetY, scaleStep = 1;
     private float focusX, focusY, span, downX, downY, remoteX, remoteY;
-    private boolean localGesture, singleTouch, remotePressed;
+    private boolean localGesture, singleTouch, remotePressed, pointerMoving;
     private final Runnable hold = () -> {
-        if (singleTouch && !localGesture) pressRemote();
+        if (singleTouch && !localGesture && !pointerMoving) pressRemote();
     };
 
     RemoteViewport(FrameLayout viewport, SurfaceViewRenderer renderer, TextView zoomLabel, RemoteInput remote) {
@@ -47,7 +47,7 @@ final class RemoteViewport implements View.OnTouchListener {
     }
     void cancel() {
         viewport.removeCallbacks(hold);
-        releaseRemote(); singleTouch = localGesture = false;
+        releaseRemote(); singleTouch = localGesture = pointerMoving = false;
         span = 0;
     }
     private boolean updatePicture() {
@@ -67,7 +67,7 @@ final class RemoteViewport implements View.OnTouchListener {
         renderer.setScaleX(zoom); renderer.setScaleY(zoom);
         renderer.setTranslationX(offsetX); renderer.setTranslationY(offsetY);
         int percent = Math.round(zoom * 100);
-        zoomLabel.setText(percent + "% · 双指缩放/移动");
+        zoomLabel.setText(percent + (zoom > 1 ? "% · 单指移动/双指缩放" : "% · 单指移鼠标/双指缩放"));
         viewport.setContentDescription("远程画面，缩放 " + percent + "%");
     }
     private float clampOffset(float offset, float viewStart, float pictureStart, float pictureSize, float viewportSize) {
@@ -117,13 +117,13 @@ final class RemoteViewport implements View.OnTouchListener {
     @Override public boolean onTouch(View view, MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN) {
-            viewport.removeCallbacks(hold); releaseRemote(); localGesture = false;
+            viewport.removeCallbacks(hold); releaseRemote(); localGesture = pointerMoving = false;
             downX = event.getX(); downY = event.getY();
             singleTouch = remotePoint(downX, downY, false);
             if (singleTouch) viewport.postDelayed(hold, ViewConfiguration.getLongPressTimeout());
         }
         if (action == MotionEvent.ACTION_POINTER_DOWN) {
-            viewport.removeCallbacks(hold); releaseRemote(); singleTouch = false; localGesture = true;
+            viewport.removeCallbacks(hold); releaseRemote(); singleTouch = pointerMoving = false; localGesture = true;
             focusX = focus(event, true, -1); focusY = focus(event, false, -1);
             span = span(event, -1);
         }
@@ -134,6 +134,9 @@ final class RemoteViewport implements View.OnTouchListener {
                 scaleStep = span > touchSlop && nextSpan > touchSlop ? nextSpan / span : 1;
                 movePicture(focus(event, true, -1), focus(event, false, -1));
                 span = nextSpan;
+            } else if (action == MotionEvent.ACTION_MOVE && zoom > 1) {
+                scaleStep = 1;
+                movePicture(event.getX(), event.getY());
             }
             if (action == MotionEvent.ACTION_POINTER_UP) {
                 focusX = focus(event, true, event.getActionIndex()); focusY = focus(event, false, event.getActionIndex());
@@ -145,9 +148,24 @@ final class RemoteViewport implements View.OnTouchListener {
         if (!singleTouch) return true;
         if (action == MotionEvent.ACTION_MOVE) {
             float dx = event.getX() - downX, dy = event.getY() - downY;
-            if (!remotePressed && dx * dx + dy * dy > touchSlop * touchSlop) pressRemote();
-            if (remotePoint(event.getX(), event.getY(), true) && remotePressed) remote.send(0, remoteX, remoteY);
+            if (!remotePressed && !pointerMoving && dx * dx + dy * dy > touchSlop * touchSlop) {
+                if (zoom > 1) {
+                    viewport.removeCallbacks(hold); singleTouch = false; localGesture = true;
+                    focusX = downX; focusY = downY; scaleStep = 1;
+                    movePicture(event.getX(), event.getY());
+                    return true;
+                }
+                viewport.removeCallbacks(hold); pointerMoving = true;
+            }
+            if (remotePoint(event.getX(), event.getY(), true)) {
+                if (remotePressed) remote.send(0, remoteX, remoteY);
+                else if (pointerMoving) remote.send(6, remoteX, remoteY);
+            }
         } else if (action == MotionEvent.ACTION_UP) {
+            if (pointerMoving) {
+                if (remotePoint(event.getX(), event.getY(), true)) remote.send(6, remoteX, remoteY);
+                cancel(); return true;
+            }
             viewport.removeCallbacks(hold);
             if (!remotePressed) { remotePoint(event.getX(), event.getY(), true); pressRemote(); }
             releaseRemote(); singleTouch = false;

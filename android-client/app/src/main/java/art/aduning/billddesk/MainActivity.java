@@ -118,10 +118,12 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         videoContainer = new FrameLayout(this); videoContainer.setBackgroundColor(Color.BLACK);
         remotePanel.addView(videoContainer, new LinearLayout.LayoutParams(-1, 0, 1));
         videoContainer.addView(renderer, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
-        TextView zoomLabel = text("100% · 双指缩放/移动", 12);
+        TextView zoomLabel = text("100% · 单指移鼠标/双指缩放", 12);
         zoomLabel.setTextColor(Color.WHITE); zoomLabel.setBackgroundColor(0x99000000);
         zoomLabel.setPadding(dp(6), dp(3), dp(6), dp(3));
-        videoContainer.addView(zoomLabel, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
+        FrameLayout.LayoutParams zoomLabelLayout = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        zoomLabelLayout.setMarginEnd(dp(8));
+        videoContainer.addView(zoomLabel, zoomLabelLayout);
         remoteViewport = new RemoteViewport(videoContainer, renderer, zoomLabel, new RemoteViewport.RemoteInput() {
             @Override public int frameWidth() { return engine.frameWidth; }
             @Override public int frameHeight() { return engine.frameHeight; }
