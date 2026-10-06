@@ -5,7 +5,7 @@ import { BilldHtmlWebpackPlugin, logData } from 'billd-html-webpack-plugin';
 import autoImport from 'unplugin-auto-import/vite';
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers';
 import unpluginVueComponents from 'unplugin-vue-components/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import checker from 'vite-plugin-checker';
 import electron from 'vite-plugin-electron/simple';
 import eslint from 'vite-plugin-eslint2';
@@ -18,20 +18,20 @@ const isWeb = process.env['VITE_APP_RELEASE_PROJECT_ISWEB'] === 'true';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const isProduction = mode === 'production';
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
 
   const outputStaticUrl = () => {
     if (isWeb) {
+      if (env.VITE_ASSET_BASE_URL) {
+        return env.VITE_ASSET_BASE_URL;
+      }
       if (isProduction) {
         return 'https://resource.hsslive.cn/billd-desk/dist/';
       } else {
         return './';
       }
     } else {
-      if (isProduction) {
-        return 'dist';
-      } else {
-        return './';
-      }
+      return './';
     }
   };
 
@@ -67,7 +67,7 @@ export default defineConfig(({ mode }) => {
           },
         },
       }),
-      electron({
+      !isWeb && electron({
         main: {
           entry: 'electron-main/index.ts', // 主进程文件
           vite: {

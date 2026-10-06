@@ -34,26 +34,10 @@ export const useRTCParams = () => {
       value: 4000,
       disabled: false,
     },
-    // {
-    //   label: '5000',
-    //   value: 5000,
-    //   disabled: false,
-    // },
-    // {
-    //   label: '6000',
-    //   value: 6000,
-    //   disabled: false,
-    // },
-    // {
-    //   label: '7000',
-    //   value: 7000,
-    //   disabled: false,
-    // },
-    // {
-    //   label: '8000',
-    //   value: 8000,
-    //   disabled: false,
-    // },
+    { label: '6000', value: 6000, disabled: false },
+    { label: '12000', value: 12000, disabled: false },
+    { label: '20000', value: 20000, disabled: false },
+    { label: '30000', value: 30000, disabled: false },
   ]);
   const maxFramerate = ref([
     {

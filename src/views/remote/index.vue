@@ -8,10 +8,13 @@
             <div class="txt">设备代码</div>
             <div class="code-info">
               <div class="code">{{ cacheStore.deskUserUuid }}</div>
-              <div
+              <button
                 class="ico copy"
+                type="button"
+                title="复制此设备的代码和临时密码"
+                aria-label="复制此设备的代码和临时密码"
                 @click="handleCopyRemoteInfo"
-              ></div>
+              ></button>
               <div
                 class="ico refresh"
                 @click="handleResetDeskuuid"
@@ -110,17 +113,16 @@
         <div class="tip">已准备好连接</div>
         <div class="link-config">
           <div class="link-item">
-            <n-space>
+            <n-space align="center">
               <div class="link-label">码率：</div>
-              <n-radio-group v-model:value="currentMaxBitrate">
-                <n-radio
-                  v-for="item in maxBitrate"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </n-radio>
-              </n-radio-group>
+              <n-select
+                v-model:value="currentMaxBitrate"
+                :options="maxBitrate.map((item) => ({
+                  ...item,
+                  label: item.value >= 1000 ? `${item.value / 1000} Mbps` : `${item.value} kbps`,
+                }))"
+                style="width: 160px"
+              />
             </n-space>
           </div>
           <div class="link-item">
@@ -577,8 +579,10 @@ function responseWorkAreaSize(_event, data: IIpcRendererData) {
 }
 
 function responseGetScreenStream(_event, data: IIpcRendererData) {
-  if (data.code !== 0) {
-    window.$message.error(data.msg || '');
+  if (data.code !== 0 || !data.data?.stream?.id) {
+    handleScreenCaptureError(
+      data.msg || '无法获取屏幕，请检查录屏权限并重试。'
+    );
     return;
   }
   chromeMediaSourceId.value = data.data.stream.id;
@@ -710,13 +714,23 @@ async function handleDesktopStream(chromeMediaSourceId) {
         mandatory: {
           chromeMediaSource: 'desktop',
           chromeMediaSourceId,
+          maxFrameRate: 60,
         },
       },
     });
     anchorStream.value = stream;
   } catch (error) {
     console.log(error);
+    handleScreenCaptureError(
+      '屏幕采集失败，请确认录屏权限已开启；授权后完全退出并重新打开 BilldDesk。'
+    );
   }
+}
+
+function handleScreenCaptureError(message: string) {
+  handleCloseAll();
+  appStore.remoteDesk.clear();
+  window.$message.error(message);
 }
 
 async function handleRTC(receiver) {
@@ -759,22 +773,18 @@ async function handleRTC(receiver) {
   }
 }
 
-function handleCopyRemoteInfo() {
-  const str = `BilldDesk:设备代码:${cacheStore.remoteDeskUserUuid};临时密码:${cacheStore.remoteDeskUserPassword}`;
-  // @ts-ignore
-  textArea.select(); // 选择文本
-  // @ts-ignore
-  textArea.setSelectionRange(0, 99999); // 对于移动设备
-  // 使用剪贴板 API 复制文本
-  navigator.clipboard
-    .writeText(str)
-    .then(() => {
-      window.$message.success('已复制邀请信息！');
-    })
-    .catch((err) => {
-      console.log(err);
-      window.$message.error('复制邀请信息失败！');
-    });
+async function handleCopyRemoteInfo() {
+  if (!cacheStore.deskUserUuid || !cacheStore.deskUserPassword) {
+    window.$message.warning('设备信息尚未准备好，请稍后再试');
+    return;
+  }
+  const str = `BilldDesk:设备代码:${cacheStore.deskUserUuid};临时密码:${cacheStore.deskUserPassword}`;
+  try {
+    await navigator.clipboard.writeText(str);
+    window.$message.success('已复制邀请信息！');
+  } catch (error) {
+    window.$message.error('复制邀请信息失败，请重试');
+  }
 }
 
 function changeDebugUrl() {
@@ -1003,6 +1013,10 @@ function handleDel(sender) {
               cursor: pointer;
 
               &.copy {
+                padding: 0;
+                border: 0;
+                background-color: transparent;
+
                 @include setBackground('@/assets/img/copy.png');
               }
               &.refresh {

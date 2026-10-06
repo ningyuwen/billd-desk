@@ -48,7 +48,9 @@ onMounted(() => {
   });
   getClient();
   if (ipcRenderer) {
-    handleOpenDevTools({ windowId: WINDOW_ID_ENUM.remote });
+    if (import.meta.env.DEV) {
+      handleOpenDevTools({ windowId: WINDOW_ID_ENUM.remote });
+    }
     handleDeskVersionCheck();
   }
 });

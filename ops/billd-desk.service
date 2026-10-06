@@ -1,0 +1,19 @@
+[Unit]
+Description=BilldDesk API and Socket.IO
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/billd-desk/server
+EnvironmentFile=/etc/billd-desk/server.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

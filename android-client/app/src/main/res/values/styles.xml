@@ -1,0 +1,10 @@
+<resources>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#C88800</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F5F6F8</item>
+        <item name="android:navigationBarColor">#F5F6F8</item>
+    </style>
+    <string name="accessibility_description">仅在你启动屏幕共享并允许远程连接时，BilldDesk 使用无障碍服务执行远程触控、返回和文字输入。关闭共享即可停止远程操作；本服务不会收集或上传界面文字。</string>
+</resources>
