@@ -1,6 +1,6 @@
 import { getRandomString } from 'billd-utils';
 
-import { COTURN_URL } from '@/constant';
+import { COTURN_CREDENTIAL, COTURN_URL, COTURN_USERNAME } from '@/constant';
 import { LiveLineEnum, MediaTypeEnum } from '@/interface';
 import { AppRootState, useAppStore } from '@/store/app';
 import { useNetworkStore } from '@/store/network';
@@ -162,7 +162,8 @@ export class WebRTCClass {
               .setParameters(parameters)
               .then(() => {
                 console.log('设置最大码率成功', maxBitrate);
-                this.maxBitrate = val;
+                // Keep kbps here; setMaxBitrate converts to bps on each call.
+                this.maxBitrate = maxBitrate;
                 resolve(1);
               })
               .catch((error) => {
@@ -544,8 +545,8 @@ export class WebRTCClass {
             // },
             {
               urls: getCoturnUrl() || COTURN_URL,
-              username: 'hss',
-              credential: '123456',
+              username: COTURN_USERNAME,
+              credential: COTURN_CREDENTIAL,
             },
           ];
       this.peerConnection = new RTCPeerConnection({

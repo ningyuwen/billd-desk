@@ -5,7 +5,8 @@ import type { BilldHtmlWebpackPluginLog } from '@/interface';
 import { prodDomain } from '@/spec-config';
 
 export const PROJECT_GITHUB = `https://github.com/galaxy-s10/billd-desk-electron`;
-export const WEB_DESK_URL = `https://desk.hsslive.cn`;
+export const WEB_DESK_URL =
+  import.meta.env.VITE_WEB_DESK_URL || `https://desk.hsslive.cn`;
 
 export const AUTHOR_INFO = {
   github: 'https://github.com/galaxy-s10',
@@ -26,7 +27,11 @@ export const APP_BUILD_INFO = process.env
 
 export const NODE_ENV = process.env.NODE_ENV;
 
-export const COTURN_URL = `turn:hk.${prodDomain}`;
+export const COTURN_URL =
+  import.meta.env.VITE_COTURN_URL || `turn:hk.${prodDomain}`;
+export const COTURN_USERNAME = import.meta.env.VITE_COTURN_USERNAME || 'hss';
+export const COTURN_CREDENTIAL =
+  import.meta.env.VITE_COTURN_CREDENTIAL || '123456';
 
 // ======本地调试=====
 
@@ -45,14 +50,16 @@ export const COTURN_URL = `turn:hk.${prodDomain}`;
 // ======线上正式=====
 
 export const WEBSOCKET_URL =
-  process.env.NODE_ENV === 'development'
+  import.meta.env.VITE_WEBSOCKET_URL ||
+  (process.env.NODE_ENV === 'development'
     ? `ws://localhost:4300`
-    : `wss://srs-pull.${prodDomain}`;
+    : `wss://srs-pull.${prodDomain}`);
 
 export const AXIOS_BASEURL =
-  process.env.NODE_ENV === 'development'
+  import.meta.env.VITE_API_BASE_URL ||
+  (process.env.NODE_ENV === 'development'
     ? `/api`
-    : `https://api-live.${prodDomain}`;
+    : `https://api-live.${prodDomain}`);
 
 // ======线上正式=====
 

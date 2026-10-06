@@ -1,0 +1,9 @@
+{
+  extends: './electron-builder.json5',
+  // The bundled native modules use Node-API and include both target binaries.
+  npmRebuild: false,
+  mac: {
+    sign: './ops/sign-mac-adhoc.cjs',
+    notarize: false,
+  },
+}

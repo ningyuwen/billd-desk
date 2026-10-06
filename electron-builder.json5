@@ -15,7 +15,7 @@
   mac: {
     target: ['dmg'],
     artifactName: '${productName}-mac-${platform}-${version}-${arch}-installer.${ext}',
-    icon: 'build/icons/icon.incs',
+    icon: 'build/icons/icon.icns',
   },
   linux: {
     artifactName: '${productName}-linux-${platform}-${version}-${arch}-installer.${ext}',
@@ -23,7 +23,7 @@
     target: [{ target: 'AppImage', arch: ['x64', 'arm64'] }],
   },
   win: {
-    artifactName: '${productName}-win-${platform}-${version}-${arch}-installer.${ext}',
+    artifactName: '${productName}-win-${version}-${arch}-installer.${ext}',
     // highestAvailable，可用的最高权限
     // requireAdministrator，管理员权限
     requestedExecutionLevel: 'requireAdministrator',

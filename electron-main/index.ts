@@ -693,7 +693,11 @@ function main() {
       const win = windowMap.get(windowId);
       if (win) {
         try {
-          await nutjs.keyboard.type(key);
+          if (Array.isArray(key)) {
+            await nutjs.keyboard.type(...key);
+          } else {
+            await nutjs.keyboard.type(key);
+          }
           winWebContentsSend({
             windowId,
             channel: IPC_EVENT.response_keyboardType,
@@ -1097,23 +1101,34 @@ function main() {
       const { windowId } = data;
       const win = windowMap.get(Number(windowId));
       if (win) {
-        const inputSources = await desktopCapturer.getSources({
-          types: ['screen'],
-        });
-        const res: any[] = [];
-        Object.keys(inputSources).forEach((key) => {
-          const source = inputSources[key];
-          if (!res.length) {
-            res.push(source);
+        try {
+          const inputSources = await desktopCapturer.getSources({
+            types: ['screen'],
+          });
+          if (!inputSources[0]) {
+            throw new Error('No screen capture source is available');
           }
-        });
-        winWebContentsSend({
-          windowId,
-          channel: IPC_EVENT.response_getScreenStream,
-          requestId,
-          data: { stream: res[0] },
-          code: 0,
-        });
+          winWebContentsSend({
+            windowId,
+            channel: IPC_EVENT.response_getScreenStream,
+            requestId,
+            data: { stream: inputSources[0] },
+            code: 0,
+          });
+        } catch (error) {
+          console.error('获取屏幕失败', error);
+          winWebContentsSend({
+            windowId,
+            channel: IPC_EVENT.response_getScreenStream,
+            requestId,
+            data: {},
+            code: 1,
+            msg:
+              platform === 'darwin'
+                ? '无法共享屏幕，请在系统设置的隐私与安全中开启 BilldDesk 的录屏权限，然后完全退出并重新打开应用。'
+                : '无法获取屏幕，请检查屏幕共享权限并重试。',
+          });
+        }
       }
     }
   );
