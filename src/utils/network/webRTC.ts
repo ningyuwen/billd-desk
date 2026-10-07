@@ -36,6 +36,88 @@ export class WebRTCClass {
 
   rtt = -1;
 
+  remotePlatform = '';
+
+  videoStats: {
+    fps: number | null;
+    presentedFps: number | null;
+    presentationGapMs: number | null;
+    receiveToPresentMs: number | null;
+    bitrateMbps: number | null;
+    jitterBufferMs: number | null;
+    decodeMs: number | null;
+    droppedFrames: number | null;
+    connectionPath: string;
+  } | null = null;
+
+  previousVideoStats: RTCInboundRtpStreamStats | null = null;
+  videoFrameCallback: number | null = null;
+  presentedFrames = 0;
+  previousPresentedFrames: number | null = null;
+  presentationSampleTime = performance.now();
+  lastPresentationTime: number | null = null;
+  maxPresentationGapMs: number | null = null;
+  presentationDelayTotal = 0;
+  presentationDelayCount = 0;
+  interactionSample: { frames: number[][] } | null = null;
+
+  /** Two-second, opt-in diagnostic window around input, separate from 1 Hz UI stats. */
+  sampleInteraction = async (action: 'click' | 'back') => {
+    if (
+      !(window as Window & { billdPerformanceEnabled?: boolean })
+        .billdPerformanceEnabled
+    )
+      return;
+    const connection = this.peerConnection;
+    if (!connection || this.interactionSample) return;
+    const sample = { frames: [] as number[][] };
+    this.interactionSample = sample;
+    const counters = async () => {
+      const reports = await connection.getStats();
+      let values: number[] = [];
+      reports.forEach((report) => {
+        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+          values = [
+            performance.now(),
+            report.framesDecoded || 0,
+            report.framesDropped || 0,
+            report.freezeCount || 0,
+            report.totalFreezesDuration || 0,
+            report.jitterBufferDelay || 0,
+            report.jitterBufferEmittedCount || 0,
+            report.keyFramesDecoded || 0,
+            report.framesReceived || 0,
+            report.bytesReceived || 0,
+            report.packetsReceived || 0,
+            report.packetsLost || 0,
+            report.pliCount || 0,
+            report.nackCount || 0,
+            report.totalDecodeTime || 0,
+          ];
+        }
+      });
+      return values;
+    };
+    try {
+      const before = await counters();
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (this.peerConnection !== connection) return;
+      const after = await counters();
+      console.info(
+        `[BilldDeskPerformance]${JSON.stringify({
+          action,
+          before,
+          after,
+          frames: sample.frames,
+        })}`
+      );
+    } catch {
+      // A closing connection should simply discard its diagnostic sample.
+    } finally {
+      this.interactionSample = null;
+    }
+  };
+
   loopGetStatsTimer: any = null;
 
   constructor(data: {
@@ -50,6 +132,7 @@ export class WebRTCClass {
     deskUserUuid?: string;
     remoteDeskUserUuid?: string;
     localStream?: MediaStream;
+    remotePlatform?: string;
   }) {
     this.roomId = data.roomId;
     this.videoEl = data.videoEl;
@@ -59,6 +142,7 @@ export class WebRTCClass {
     this.deskUserUuid = data.deskUserUuid || '';
     this.remoteDeskUserUuid = data.remoteDeskUserUuid || '';
     this.localStream = data.localStream;
+    this.remotePlatform = data.remotePlatform || '';
     if (data.maxBitrate) {
       this.maxBitrate = data.maxBitrate;
     }
@@ -71,45 +155,141 @@ export class WebRTCClass {
     this.isSRS = data.isSRS;
     console.warn('new webrtc参数:', data);
     this.createPeerConnection();
+    this.observePresentation();
+    this.loopGetStats();
   }
 
-  loopGetStats = () => {
-    this.loopGetStatsTimer = setInterval(async () => {
+  // Count frames submitted to the compositor, separately from RTP decoding.
+  // https://wicg.github.io/video-rvfc/
+  observePresentation = () => {
+    if (!this.videoEl.requestVideoFrameCallback) return;
+    const onFrame: VideoFrameRequestCallback = (_, metadata) => {
       if (!this.peerConnection) return;
+      if (
+        this.interactionSample &&
+        this.interactionSample.frames.length < 240
+      ) {
+        this.interactionSample.frames.push([
+          performance.now(),
+          metadata.mediaTime * 1000,
+          metadata.expectedDisplayTime,
+          metadata.receiveTime ?? -1,
+          metadata.captureTime ?? -1,
+          (metadata.processingDuration ?? -1) * 1000,
+          metadata.presentedFrames,
+        ]);
+      }
+      this.presentedFrames = metadata.presentedFrames;
+      if (this.lastPresentationTime !== null) {
+        this.maxPresentationGapMs = Math.max(
+          this.maxPresentationGapMs || 0,
+          metadata.expectedDisplayTime - this.lastPresentationTime
+        );
+      }
+      this.lastPresentationTime = metadata.expectedDisplayTime;
+      if (typeof metadata.receiveTime === 'number') {
+        const delay = metadata.expectedDisplayTime - metadata.receiveTime;
+        if (Number.isFinite(delay) && delay >= 0) {
+          this.presentationDelayTotal += delay;
+          this.presentationDelayCount += 1;
+        }
+      }
+      this.videoFrameCallback = this.videoEl.requestVideoFrameCallback(onFrame);
+    };
+    this.videoFrameCallback = this.videoEl.requestVideoFrameCallback(onFrame);
+  };
+
+  loopGetStats = () => {
+    clearInterval(this.loopGetStatsTimer);
+    this.loopGetStatsTimer = setInterval(async () => {
+      const connection = this.peerConnection;
+      if (!connection || connection.connectionState !== 'connected') return;
       try {
-        const res = await this.peerConnection.getStats();
-        // 总丢包率（音频丢包和视频丢包）
-        let loss = 0;
-        let rtt = 0;
+        const res = await connection.getStats();
+        if (this.peerConnection !== connection) return;
+        let video: RTCInboundRtpStreamStats | undefined;
+        let pair;
         res.forEach((report: RTCInboundRtpStreamStats) => {
-          // @ts-ignore
-          const currentRoundTripTime = report?.currentRoundTripTime;
-          const packetsLost = report?.packetsLost;
-          const packetsReceived = report.packetsReceived;
-          if (currentRoundTripTime !== undefined) {
-            rtt = currentRoundTripTime * 1000;
-          }
-          if (report.type === 'inbound-rtp' && report.kind === 'audio') {
-            if (packetsReceived !== undefined && packetsLost !== undefined) {
-              if (packetsLost === 0 || packetsReceived === 0) {
-                loss += 0;
-              } else {
-                loss += packetsLost / packetsReceived;
-              }
-            }
-          }
-          if (report.type === 'inbound-rtp' && report.kind === 'video') {
-            if (packetsReceived !== undefined && packetsLost !== undefined) {
-              if (packetsLost === 0 || packetsReceived === 0) {
-                loss += 0;
-              } else {
-                loss += packetsLost / packetsReceived;
-              }
-            }
+          if (report.type === 'inbound-rtp' && report.kind === 'video')
+            video = report;
+          if (report.type === 'transport') {
+            const transport = res.get(report.id);
+            if (transport.selectedCandidatePairId)
+              pair = res.get(transport.selectedCandidatePairId);
           }
         });
-        this.loss = loss;
-        this.rtt = rtt;
+        this.rtt = Number.isFinite(pair?.currentRoundTripTime)
+          ? pair.currentRoundTripTime * 1000
+          : -1;
+        if (video) {
+          const previous = this.previousVideoStats;
+          const seconds =
+            previous?.id === video.id
+              ? (video.timestamp - previous.timestamp) / 1000
+              : 0;
+          const delta = (key: keyof RTCInboundRtpStreamStats) => {
+            const current = video![key];
+            const old = previous?.[key];
+            return seconds > 0 &&
+              typeof current === 'number' &&
+              typeof old === 'number' &&
+              Number.isFinite(current) &&
+              Number.isFinite(old) &&
+              current >= old
+              ? current - old
+              : null;
+          };
+          const frames = delta('framesDecoded');
+          const bytes = delta('bytesReceived');
+          const received = delta('packetsReceived');
+          const lost = delta('packetsLost');
+          const emitted = delta('jitterBufferEmittedCount');
+          const bufferDelay = delta('jitterBufferDelay');
+          const decodeTime = delta('totalDecodeTime');
+          const local = pair && res.get(pair.localCandidateId);
+          const remote = pair && res.get(pair.remoteCandidateId);
+          const sampleTime = performance.now();
+          const presentationSeconds =
+            (sampleTime - this.presentationSampleTime) / 1000;
+          this.loss =
+            received !== null && lost !== null && received + lost > 0
+              ? (lost / (received + lost)) * 100
+              : -1;
+          this.videoStats = {
+            fps: frames !== null ? frames / seconds : null,
+            presentedFps:
+              this.previousPresentedFrames !== null && presentationSeconds > 0
+                ? Math.max(
+                    0,
+                    this.presentedFrames - this.previousPresentedFrames
+                  ) / presentationSeconds
+                : null,
+            presentationGapMs: this.maxPresentationGapMs,
+            receiveToPresentMs: this.presentationDelayCount
+              ? this.presentationDelayTotal / this.presentationDelayCount
+              : null,
+            bitrateMbps: bytes !== null ? (bytes * 8) / seconds / 1e6 : null,
+            jitterBufferMs:
+              emitted && bufferDelay !== null
+                ? (bufferDelay * 1000) / emitted
+                : null,
+            decodeMs:
+              frames && decodeTime !== null
+                ? (decodeTime * 1000) / frames
+                : null,
+            droppedFrames: delta('framesDropped'),
+            connectionPath:
+              local && remote
+                ? `${local.candidateType === 'relay' || remote.candidateType === 'relay' ? '中继' : '直连'} · ${local.protocol}`
+                : '测量中',
+          };
+          this.previousVideoStats = video;
+          this.previousPresentedFrames = this.presentedFrames;
+          this.presentationSampleTime = sampleTime;
+          this.maxPresentationGapMs = null;
+          this.presentationDelayTotal = 0;
+          this.presentationDelayCount = 0;
+        }
         this.update();
       } catch (error) {
         console.error('getStats错误');
@@ -516,6 +696,9 @@ export class WebRTCClass {
         msgType,
         requestId,
         data,
+        performanceSample:
+          (window as Window & { billdPerformanceEnabled?: boolean })
+            .billdPerformanceEnabled || undefined,
       })
     );
   };
@@ -571,6 +754,7 @@ export class WebRTCClass {
           msg: 'dataChannel连接成功！',
           type: 'success',
         });
+        this.update();
       };
       this.dataChannel.onerror = () => {
         this.prettierLog({
@@ -587,6 +771,12 @@ export class WebRTCClass {
 
   /** 手动关闭webrtc连接 */
   close = () => {
+    clearInterval(this.loopGetStatsTimer);
+    if (this.videoFrameCallback !== null) {
+      this.videoEl.cancelVideoFrameCallback(this.videoFrameCallback);
+      this.videoFrameCallback = null;
+    }
+    this.previousVideoStats = null;
     try {
       console.warn(
         '手动关闭webrtc连接',

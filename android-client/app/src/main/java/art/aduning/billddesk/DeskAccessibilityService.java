@@ -13,23 +13,41 @@ import org.json.JSONObject;
 
 public final class DeskAccessibilityService extends AccessibilityService {
     static volatile DeskAccessibilityService current;
-    private Path gesture;
+    private final android.os.Handler inputHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private GestureDescription.StrokeDescription dragStroke;
+    private boolean pointerDown, dragInFlight, dragDirty, firstDragMovement;
+    private int dragGeneration, wheelGeneration;
+    private float dragX, dragY;
+    private float wheelX, wheelY, wheelWidth, wheelHeight;
+    private boolean wheelInFlight;
+    private final Runnable releaseTimeout = this::resetInput;
     private long pressedAt;
     private float pointerX, pointerY;
     private final java.util.Set<Integer> pressedKeys = new java.util.HashSet<>();
     private boolean capsLock;
     @Override protected void onServiceConnected() { current = this; ((DeskApplication) getApplication()).engine().changed(); }
-    @Override public void onDestroy() { current = null; ((DeskApplication) getApplication()).engine().changed(); super.onDestroy(); }
+    @Override public void onDestroy() { resetInput(); current = null; ((DeskApplication) getApplication()).engine().changed(); super.onDestroy(); }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
-    @Override public void onInterrupt() { gesture = null; }
+    @Override public void onInterrupt() { resetInput(); }
 
     void command(String message, JSONObject data) {
         if (!((DeskApplication) getApplication()).engine().sharing) return;
         if (message.equals("androidAction")) {
+            endDrag();
             switch (data.optString("action")) {
                 case "back": performGlobalAction(GLOBAL_ACTION_BACK); break;
                 case "home": performGlobalAction(GLOBAL_ACTION_HOME); break;
                 case "recents": performGlobalAction(GLOBAL_ACTION_RECENTS); break;
+                case "notifications": performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS); break;
+                case "quickSettings": performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS); break;
+                case "dismissShade":
+                    // Some OEM control centers ignore DISMISS_NOTIFICATION_SHADE.
+                    AccessibilityNodeInfo root = getRootInActiveWindow();
+                    if (root != null && "com.android.systemui".equals(root.getPackageName()))
+                        performGlobalAction(GLOBAL_ACTION_BACK);
+                    else if (android.os.Build.VERSION.SDK_INT >= 31)
+                        performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE);
+                    break;
             }
             return;
         }
@@ -40,17 +58,18 @@ public final class DeskAccessibilityService extends AccessibilityService {
         switch (data.optInt("type", -1)) {
             case 0: case 1: case 6:
                 pointerX = x; pointerY = y;
-                if (gesture != null) gesture.lineTo(x, y);
+                if (pointerDown) {
+                    dragDirty = true;
+                    inputHandler.removeCallbacks(releaseTimeout);
+                    inputHandler.postDelayed(releaseTimeout, 5000);
+                    pumpDrag();
+                }
                 break;
             case 2:
-                pointerX = x; pointerY = y; gesture = new Path(); gesture.moveTo(x, y);
-                pressedAt = android.os.SystemClock.uptimeMillis(); break;
+                beginDrag(x, y); break;
             case 4:
-                if (gesture != null) {
-                    gesture.lineTo(x, y);
-                    dispatch(gesture, Math.max(50, Math.min(2000, android.os.SystemClock.uptimeMillis() - pressedAt)));
-                    gesture = null;
-                }
+                pointerX = x; pointerY = y;
+                endDrag();
                 break;
             case 8: tap(x, y); break;
             case 7:
@@ -62,11 +81,14 @@ public final class DeskAccessibilityService extends AccessibilityService {
             case 9: performGlobalAction(GLOBAL_ACTION_BACK); break;
             case 10: case 11: case 12: case 13:
                 int type = data.optInt("type");
-                float cx = metrics.widthPixels / 2f, cy = metrics.heightPixels / 2f;
-                float dx = type == 12 ? metrics.widthPixels * .3f : type == 13 ? -metrics.widthPixels * .3f : 0;
-                float dy = type == 10 ? -metrics.heightPixels * .3f : type == 11 ? metrics.heightPixels * .3f : 0;
-                Path scroll = new Path(); scroll.moveTo(cx - dx / 2, cy - dy / 2); scroll.lineTo(cx + dx / 2, cy + dy / 2);
-                dispatch(scroll, 350); break;
+                if (pointerDown || dragStroke != null) break;
+                wheelWidth = metrics.widthPixels; wheelHeight = metrics.heightPixels;
+                float amount = (float) Math.max(1, Math.min(300, data.optDouble("amount", 80))) * metrics.density;
+                // Wheel down means the finger moves up. Coalesce arrivals while one
+                // gesture runs; dispatching each event would cancel the previous swipe.
+                wheelX = clampWheel(wheelX + (type == 12 ? amount : type == 13 ? -amount : 0), wheelWidth);
+                wheelY = clampWheel(wheelY + (type == 10 ? -amount : type == 11 ? amount : 0), wheelHeight);
+                pumpWheel(); break;
             case 14:
                 JSONArray text = data.optJSONArray("key");
                 if (text != null && text.length() > 0) edit(text.optString(0), false);
@@ -83,6 +105,81 @@ public final class DeskAccessibilityService extends AccessibilityService {
                 if (released != null) for (int i = 0; i < released.length(); i++) pressedKeys.remove(released.optInt(i, -1));
                 break;
         }
+    }
+    private void beginDrag(float x, float y) {
+        wheelGeneration++; wheelInFlight = false; wheelX = wheelY = 0;
+        dragGeneration++; dragInFlight = false; dragStroke = null;
+        pointerDown = true; dragDirty = true; firstDragMovement = false;
+        pointerX = dragX = x; pointerY = dragY = y;
+        pressedAt = android.os.SystemClock.uptimeMillis();
+        inputHandler.removeCallbacks(releaseTimeout);
+        inputHandler.postDelayed(releaseTimeout, 5000);
+        pumpDrag();
+    }
+    private void endDrag() {
+        inputHandler.removeCallbacks(releaseTimeout);
+        if (!pointerDown && dragStroke == null) return;
+        pointerDown = false; dragDirty = true;
+        pumpDrag();
+    }
+    private void pumpDrag() {
+        if (dragInFlight || !dragDirty) return;
+        Path path = new Path(); path.moveTo(dragX, dragY);
+        boolean moved = dragX != pointerX || dragY != pointerY;
+        if (moved) path.lineTo(pointerX, pointerY);
+        // Keep the pointer down between short strokes, rather than replaying the
+        // complete path only after mouse-up. Pending movements use the latest point.
+        GestureDescription.StrokeDescription next = dragStroke == null
+                ? new GestureDescription.StrokeDescription(path, 0, 16, pointerDown)
+                : dragStroke.continueStroke(path, 0, 16, pointerDown);
+        if (moved && !firstDragMovement) {
+            firstDragMovement = true;
+            android.util.Log.d("BilldDeskInput", "First drag movement: "
+                    + (android.os.SystemClock.uptimeMillis() - pressedAt) + " ms after press; released=" + !pointerDown);
+        }
+        dragX = pointerX; dragY = pointerY; dragStroke = next;
+        dragDirty = false; dragInFlight = true;
+        final int generation = dragGeneration;
+        boolean accepted = dispatchGesture(new GestureDescription.Builder().addStroke(next).build(), new GestureResultCallback() {
+            @Override public void onCompleted(GestureDescription description) {
+                if (generation != dragGeneration) return;
+                dragInFlight = false;
+                if (!next.willContinue()) { dragStroke = null; dragDirty = false; }
+                else pumpDrag();
+            }
+            @Override public void onCancelled(GestureDescription description) {
+                if (generation != dragGeneration) return;
+                clearDrag();
+                android.util.Log.w("BilldDeskInput", "Remote drag cancelled");
+            }
+        }, inputHandler);
+        if (!accepted) clearDrag();
+    }
+    private void clearDrag() {
+        pointerDown = false; dragInFlight = false; dragDirty = false; dragStroke = null;
+        inputHandler.removeCallbacks(releaseTimeout);
+    }
+    private float clampWheel(float value, float size) { return Math.max(-size * .6f, Math.min(size * .6f, value)); }
+    private void pumpWheel() {
+        if (wheelInFlight || pointerDown || dragStroke != null || (wheelX == 0 && wheelY == 0)) return;
+        float dx = wheelX, dy = wheelY; wheelX = wheelY = 0;
+        float cx = wheelWidth / 2, cy = wheelHeight / 2;
+        Path path = new Path(); path.moveTo(cx - dx / 2, cy - dy / 2); path.lineTo(cx + dx / 2, cy + dy / 2);
+        wheelInFlight = true;
+        final int generation = wheelGeneration;
+        boolean accepted = dispatchGesture(new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 80)).build(), new GestureResultCallback() {
+            @Override public void onCompleted(GestureDescription description) {
+                if (generation != wheelGeneration) return;
+                wheelInFlight = false; pumpWheel();
+            }
+            @Override public void onCancelled(GestureDescription description) {
+                if (generation != wheelGeneration) return;
+                wheelInFlight = false; wheelX = wheelY = 0;
+                android.util.Log.w("BilldDeskInput", "Remote wheel gesture cancelled");
+            }
+        }, inputHandler);
+        if (!accepted) { wheelInFlight = false; wheelX = wheelY = 0; }
     }
     private void tap(float x, float y) { Path path = new Path(); path.moveTo(x, y); dispatch(path, 70); }
     private void dispatch(Path path, long duration) {
@@ -118,7 +215,10 @@ public final class DeskAccessibilityService extends AccessibilityService {
             if (value != null) edit(value, false);
         }
     }
-    void resetInput() { gesture = null; pressedKeys.clear(); capsLock = false; }
+    void resetInput() {
+        endDrag(); wheelGeneration++; wheelInFlight = false; wheelX = wheelY = 0;
+        pressedKeys.clear(); capsLock = false;
+    }
     private void edit(String insertion, boolean delete) {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return;

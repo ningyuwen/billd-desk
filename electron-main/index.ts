@@ -1,3 +1,4 @@
+import { appendFileSync, mkdirSync } from 'fs';
 import path from 'path';
 import { platform } from 'process';
 
@@ -20,6 +21,14 @@ import type { nutjsTs } from './types';
 import type { IIpcRendererData } from '../src/pure-interface';
 
 const nutjs: nutjsTs = require('@nut-tree-fork/nut-js');
+
+// Remote input needs fresh frames rather than delayed video playback. Electron 33's
+// WebRTC supports this override; keep a small recovery window and decode promptly.
+// https://webrtc.googlesource.com/src/+/14a23a32c4419210c65cd5e4f98557c3f19ab3a0
+app.commandLine.appendSwitch(
+  'force-fieldtrials',
+  'WebRTC-ForcePlayoutDelay/min_ms:0,max_ms:50/'
+);
 
 // 该版本electron所对应的node版本
 console.log('process.version', process.version);
@@ -98,11 +107,47 @@ async function createWindow({
       devTools: true,
       // nodeIntegration: true, // 在网页中集成Node
       preload: path.join(__dirname, 'preload.mjs'),
+      additionalArguments: app.commandLine.hasSwitch('billd-performance-log')
+        ? ['--billd-performance-log']
+        : [],
     },
     frame,
   });
 
   windowMap.set(windowId, win);
+  // Explicitly enabled local diagnostics. Keep only numeric frame data, never
+  // general console messages, connection URLs, identifiers or signaling payloads.
+  if (app.commandLine.hasSwitch('billd-performance-log')) {
+    win.webContents.on('console-message', (_event, _level, message) => {
+      const prefix = '[BilldDeskPerformance]';
+      if (!message.startsWith(prefix) || message.length > 100000) return;
+      try {
+        const sample = JSON.parse(message.slice(prefix.length));
+        if (!['click', 'back'].includes(sample.action)) return;
+        const numbers = (values: unknown) =>
+          Array.isArray(values) &&
+          values.length <= 240 &&
+          values.every(
+            (value) => typeof value === 'number' && Number.isFinite(value)
+          );
+        if (!numbers(sample.before) || !numbers(sample.after)) return;
+        if (!Array.isArray(sample.frames) || sample.frames.length > 240) return;
+        if (
+          !sample.frames.every((frame) => numbers(frame) && frame.length === 7)
+        )
+          return;
+        const directory = app.getPath('logs');
+        mkdirSync(directory, { recursive: true });
+        appendFileSync(
+          path.join(directory, 'remote-performance.jsonl'),
+          `${JSON.stringify({ time: Date.now(), action: sample.action, before: sample.before, after: sample.after, frames: sample.frames })}\n`,
+          { mode: 0o600 }
+        );
+      } catch {
+        // Diagnostics must never interrupt remote control.
+      }
+    });
+  }
   let url = '';
   const params = `${(route ? route : '') as string}${handleUrlQuery({
     windowId: `${windowId as number}`,

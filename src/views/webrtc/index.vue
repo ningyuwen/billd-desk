@@ -131,7 +131,7 @@
           </div>
           <div class="link-item">
             <n-space>
-              <div class="link-label">分辨率：</div>
+              <div class="link-label">画质预设：</div>
               <n-radio-group v-model:value="currentResolutionRatio">
                 <n-radio
                   v-for="item in resolutionRatio"
@@ -173,7 +173,7 @@
           </div>
           <div class="link-item">
             <n-space>
-              <div class="link-label">分辨率：</div>
+              <div class="link-label">实际尺寸：</div>
               <div class="item">
                 {{ videoSettings?.width + 'x' + videoSettings?.height }}
               </div>
@@ -181,17 +181,86 @@
           </div>
           <div class="link-item">
             <n-space>
-              <div class="link-label">帧率：</div>
+              <div class="link-label">解码帧率：</div>
               <div class="item">
-                {{ videoSettings?.frameRate?.toFixed(2) }}
+                {{ formatMetric(receivedVideoStats?.fps, ' 帧/秒') }}
               </div>
             </n-space>
           </div>
           <div class="link-item">
             <n-space>
-              <div class="link-label">延迟：</div>
+              <div class="link-label">呈现帧率：</div>
+              <div class="item">
+                {{ formatMetric(receivedVideoStats?.presentedFps, ' 帧/秒') }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">回调帧间隔：</div>
+              <div class="item">
+                {{ formatMetric(receivedVideoStats?.presentationGapMs, ' ms') }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">呈现等待：</div>
+              <div class="item">
+                {{
+                  formatMetric(receivedVideoStats?.receiveToPresentMs, ' ms')
+                }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            呈现统计为合成器提交帧；回调帧间隔可能包含漏回调和静止时间，不能替代屏幕实测。
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">网络往返：</div>
               <div class="item">
                 {{ rtcRtt }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">接收码率：</div>
+              <div class="item">
+                {{ formatMetric(receivedVideoStats?.bitrateMbps, ' Mbps') }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">缓冲等待：</div>
+              <div class="item">
+                {{ formatMetric(receivedVideoStats?.jitterBufferMs, ' ms') }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">单帧解码：</div>
+              <div class="item">
+                {{ formatMetric(receivedVideoStats?.decodeMs, ' ms') }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">采样丢帧：</div>
+              <div class="item">
+                {{ formatMetric(receivedVideoStats?.droppedFrames, ' 帧') }}
+              </div>
+            </n-space>
+          </div>
+          <div class="link-item">
+            <n-space>
+              <div class="link-label">连接路径：</div>
+              <div class="item">
+                {{ receivedVideoStats?.connectionPath || '测量中' }}
               </div>
             </n-space>
           </div>
@@ -218,13 +287,31 @@
       </div>
     </div>
 
+    <nav
+      v-if="isRemoteAndroid"
+      class="android-controls"
+      aria-label="安卓系统操作"
+      @mousedown.stop
+      @mouseup.stop
+    >
+      <button
+        v-for="action in androidActions"
+        :key="action.id"
+        type="button"
+        :disabled="!canControlAndroid"
+        :title="`${action.description} · Alt+Shift+${action.key}`"
+        @click="handleAndroidAction(action.id)"
+      >
+        {{ action.label }}
+      </button>
+    </nav>
+
     <div
       ref="videoWrapRef"
       class="remote-video"
       :class="{ 'hide-cursor': !showCursor, watch: isWatchMode }"
       @mousedown="handleMouseDown"
       @mousemove="handleMouseMove"
-      @mouseup="handleMouseUp"
       @dblclick="handleDoublelclick"
       @contextmenu="handleContextmenu"
     ></div>
@@ -320,6 +407,7 @@ const currentAudioContentHint = ref(audioContentHint.value[0].value);
 
 let clickTimer: any;
 let isLongClick = false;
+let remoteMouseDown = false;
 const videoList = ref<HTMLVideoElement[]>([]);
 const videoWrapRef = ref<HTMLVideoElement>();
 const windowId = ref(WINDOW_ID_ENUM.webrtc);
@@ -332,7 +420,7 @@ const mySocketId = computed(() => {
 const rtcRtt = computed(() => {
   const arr: string[] = [];
   networkStore.rtcMap.forEach((rtc) => {
-    arr.push(`${rtc.rtt}ms`);
+    arr.push(formatMetric(rtc.rtt, ' ms'));
   });
   return arr.join();
 });
@@ -340,10 +428,74 @@ const rtcRtt = computed(() => {
 const rtcLoss = computed(() => {
   const arr: string[] = [];
   networkStore.rtcMap.forEach((rtc) => {
-    arr.push(`${Number(rtc.loss.toFixed(2))}%`);
+    arr.push(formatMetric(rtc.loss, '%'));
   });
   return arr.join();
 });
+
+const receivedVideoStats = computed(
+  () => networkStore.rtcMap.get(receiverId.value)?.videoStats
+);
+
+const androidActions = [
+  { id: 'back', label: '返回', key: 'B', description: '返回上一页' },
+  { id: 'home', label: '桌面', key: 'H', description: '回到桌面' },
+  { id: 'recents', label: '多任务', key: 'R', description: '打开最近任务' },
+  { id: 'notifications', label: '通知栏', key: 'N', description: '展开通知栏' },
+  {
+    id: 'quickSettings',
+    label: '快捷设置',
+    key: 'S',
+    description: '展开状态栏快捷设置',
+  },
+  { id: 'dismissShade', label: '收起', key: 'C', description: '收起系统栏' },
+];
+const isRemoteAndroid = computed(
+  () => networkStore.rtcMap.get(receiverId.value)?.remotePlatform === 'android'
+);
+const canControlAndroid = computed(
+  () =>
+    isRemoteAndroid.value &&
+    !isWatchMode.value &&
+    networkStore.rtcMap.get(receiverId.value)?.dataChannel?.readyState ===
+      'open'
+);
+
+function handleAndroidAction(action: string) {
+  if (!canControlAndroid.value) return;
+  if (action === 'back')
+    networkStore.rtcMap.get(receiverId.value)?.sampleInteraction('back');
+  networkStore.rtcMap.get(receiverId.value)?.dataChannelSend({
+    requestId: getRandomString(8),
+    msgType: WsMsgTypeEnum.androidAction,
+    data: { action },
+  });
+}
+
+function androidShortcut(event: KeyboardEvent) {
+  if (
+    !isRemoteAndroid.value ||
+    !event.altKey ||
+    !event.shiftKey ||
+    event.ctrlKey ||
+    event.metaKey
+  )
+    return;
+  const target = event.target;
+  if (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+  )
+    return;
+  return androidActions.find((action) => event.code === `Key${action.key}`);
+}
+
+function formatMetric(value: number | null | undefined, unit: string) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? `${Number(value.toFixed(2))}${unit}`
+    : '测量中';
+}
 
 const initVideo = ref(true);
 const clickNum = ref(0);
@@ -402,7 +554,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(loopBilldDeskUpdateUserTimer.value);
+  clearInterval(loopGetSettingsTimer.value);
   videoWrapRef.value?.removeEventListener('wheel', handleMouseWheel);
+  window.removeEventListener('mouseup', handleMouseUp);
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('keydown', handleKeyDown);
   window.removeEventListener('keydown', handleKeyCombination);
@@ -495,6 +649,7 @@ function init() {
   handleInitIpcRendererSend();
   handleLoopBilldDeskUpdateUserTimer();
   videoWrapRef.value?.addEventListener('wheel', handleMouseWheel);
+  window.addEventListener('mouseup', handleMouseUp);
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keydown', handleKeyCombination);
   window.addEventListener('keyup', handleKeyUp);
@@ -516,6 +671,43 @@ watch(
     } else if (newval === WsConnectStatusEnum.disconnect) {
       console.log('disconnect');
     }
+  },
+  { immediate: true }
+);
+
+watch(
+  [
+    receiverId,
+    () => networkStore.rtcMap.get(receiverId.value)?.dataChannel?.readyState,
+  ],
+  ([, state]) => {
+    if (state !== 'open') return;
+    const rtc = networkStore.rtcMap.get(receiverId.value);
+    [
+      { msgType: WsMsgTypeEnum.changeMaxBitrate, val: currentMaxBitrate.value },
+      {
+        msgType: WsMsgTypeEnum.changeMaxFramerate,
+        val: currentMaxFramerate.value,
+      },
+      {
+        msgType: WsMsgTypeEnum.changeResolutionRatio,
+        val: currentResolutionRatio.value,
+      },
+      {
+        msgType: WsMsgTypeEnum.changeVideoContentHint,
+        val: currentVideoContentHint.value,
+      },
+      {
+        msgType: WsMsgTypeEnum.changeAudioContentHint,
+        val: currentAudioContentHint.value,
+      },
+    ].forEach(({ msgType, val }) => {
+      rtc?.dataChannelSend({
+        requestId: getRandomString(8),
+        msgType,
+        data: { live_room_id: Number(roomId.value), val },
+      });
+    });
   },
   { immediate: true }
 );
@@ -873,6 +1065,12 @@ function handleCopy(str) {
 
 function handleKeyDown(event: KeyboardEvent) {
   if (isWatchMode.value) return;
+  const action = androidShortcut(event);
+  if (action) {
+    event.preventDefault();
+    if (!event.repeat) handleAndroidAction(action.id);
+    return;
+  }
   if (event.ctrlKey || event.metaKey) {
     return;
   }
@@ -900,6 +1098,10 @@ function handleKeyDown(event: KeyboardEvent) {
 
 function handleKeyUp(event: KeyboardEvent) {
   if (isWatchMode.value) return;
+  if (androidShortcut(event)) {
+    event.preventDefault();
+    return;
+  }
   if (event.ctrlKey || event.metaKey) {
     return;
   }
@@ -964,6 +1166,9 @@ function handleContextmenu() {
 }
 
 function handleMouseDown(event: MouseEvent) {
+  if (isWatchMode.value || event.button !== 0) return;
+  networkStore.rtcMap.get(receiverId.value)?.sampleInteraction('click');
+  remoteMouseDown = true;
   clickTimer = setTimeout(function () {
     console.log('长按');
     isLongClick = true;
@@ -982,10 +1187,6 @@ function handleMouseDown(event: MouseEvent) {
   const x = (xInsideElement / rect.width) * 1000;
   const y = (yInsideElement / rect.height) * 1000;
   console.log('handleMouseDown', x, y, xInsideElement, yInsideElement);
-  if (event.button === 2) {
-    console.log('handleMouseDown-当前是鼠标右键');
-    return;
-  }
   networkStore.rtcMap
     .get(receiverId.value)
     ?.dataChannelSend<WsBilldDeskBehaviorType['data']>({
@@ -1045,6 +1246,8 @@ function handleMouseMove(event: MouseEvent) {
 }
 
 function handleMouseUp(event: MouseEvent) {
+  if (!remoteMouseDown || event.button !== 0) return;
+  remoteMouseDown = false;
   if (clickTimer) {
     clearTimeout(clickTimer);
   }
@@ -1053,18 +1256,14 @@ function handleMouseUp(event: MouseEvent) {
   const clickY = event.clientY;
 
   // 获取目标元素的位置和尺寸信息
-  // @ts-ignore
-  const rect: DOMRect = event.target.getBoundingClientRect();
+  const rect = videoList.value[0]?.getBoundingClientRect();
+  if (!rect?.width || !rect.height) return;
   // 计算点击位置相对于元素的坐标
   const xInsideElement = clickX - rect.left;
   const yInsideElement = clickY - rect.top;
-  const x = (xInsideElement / rect.width) * 1000;
-  const y = (yInsideElement / rect.height) * 1000;
+  const x = Math.max(0, Math.min(1000, (xInsideElement / rect.width) * 1000));
+  const y = Math.max(0, Math.min(1000, (yInsideElement / rect.height) * 1000));
   console.log('handleMouseUp', x, y, xInsideElement, yInsideElement);
-  if (event.button === 2) {
-    console.log('handleMouseUp-当前是鼠标右键');
-    return;
-  }
   networkStore.rtcMap
     .get(receiverId.value)
     ?.dataChannelSend<WsBilldDeskBehaviorType['data']>({
@@ -1092,6 +1291,46 @@ function handleMouseUp(event: MouseEvent) {
   overflow: hidden;
   width: 100vw;
   height: 100vh;
+  .android-controls {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 998;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+    box-sizing: border-box;
+    max-width: calc(100vw - 124px);
+    padding: 4px;
+    border: 1px solid #d3d7de;
+    border-radius: 12px;
+    background: #fff;
+    button {
+      min-height: 40px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #202938;
+      font: inherit;
+      cursor: pointer;
+      &:hover:not(:disabled) {
+        background: #eef2f7;
+      }
+      &:active:not(:disabled) {
+        background: #dce4ef;
+      }
+      &:focus-visible {
+        outline: 2px solid #2563eb;
+        outline-offset: 1px;
+      }
+      &:disabled {
+        color: #687386;
+        cursor: not-allowed;
+      }
+    }
+  }
   .drag {
     position: fixed;
     z-index: 999;
@@ -1119,6 +1358,9 @@ function handleMouseUp(event: MouseEvent) {
       box-sizing: border-box;
       padding: 10px;
       width: 800px;
+      max-width: calc(100vw - 48px);
+      max-height: calc(100vh - 132px);
+      overflow-y: auto;
       background-color: white;
       box-shadow: rgba(100, 100, 111, 0.2) 0px 7px 29px 0px;
       .debug-area {

@@ -29,6 +29,7 @@ final class DeskEngine {
     final Context context;
     final EglBase egl = EglBase.create();
     final PeerConnectionFactory factory;
+    private final boolean hardwareH264;
     final Handler main = new Handler(Looper.getMainLooper());
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
     private final OkHttpClient http = new OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build();
@@ -40,8 +41,13 @@ final class DeskEngine {
     private SurfaceTextureHelper texture;
     private VideoSource screenSource;
     private VideoTrack screenTrack;
+    private Runnable idleScreenRefresh;
+    private volatile List<Long> performanceCapture;
+    private volatile List<double[]> performanceEncoded;
+    private long performanceStartNs;
     private String viewerTarget = "", viewerPassword = "", viewerSender = "";
-    private int screenWidth = 0, screenHeight = 0, limitSize = 1080, captureFps = 20;
+    private int screenWidth = 0, screenHeight = 0, captureShortEdge = 1080;
+    private volatile int captureFps = 20;
     private boolean connecting = false;
     volatile ServerConfig config;
     volatile Listener listener;
@@ -59,9 +65,28 @@ final class DeskEngine {
         this.context = context;
         config = ServerConfig.load(context);
         viewerQuality = ViewerQuality.load(context);
-        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions());
+        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(context)
+                // Screencast ALR defaults override WebRTC-Video-Pacing. Preserve
+                // its probing settings, replacing only the 2875 ms queue target.
+                .setFieldTrials("WebRTC-ProbingScreenshareBwe/1.0,100,80,40,-60,3/")
+                .createInitializationOptions());
+        hardwareH264 = Arrays.stream(new HardwareVideoEncoderFactory(egl.getEglBaseContext(), true, true).getSupportedCodecs())
+                .anyMatch(codec -> codec.name.equalsIgnoreCase("H264"));
         factory = PeerConnectionFactory.builder()
-                .setVideoEncoderFactory(new DefaultVideoEncoderFactory(egl.getEglBaseContext(), true, true))
+                .setVideoEncoderFactory(new ScreenVideoEncoderFactory(egl.getEglBaseContext(), () -> captureFps, new ScreenVideoEncoderFactory.Observer() {
+                    @Override public boolean isSampling() { return performanceEncoded != null; }
+                    @Override public void onFrame(long inputNs, long outputNs, int bytes, boolean keyFrame,
+                                                  Integer qp, int bitrateBps, double fps) {
+                        List<double[]> sample = performanceEncoded;
+                        if (sample == null) return;
+                        synchronized (sample) {
+                            if (sample.size() < 240) sample.add(new double[]{
+                                    (inputNs - performanceStartNs) / 1000000.0,
+                                    (outputNs - performanceStartNs) / 1000000.0,
+                                    bytes, keyFrame ? 1 : 0, qp == null ? -1 : qp, bitrateBps, fps});
+                        }
+                    }
+                }))
                 .setVideoDecoderFactory(new DefaultVideoDecoderFactory(egl.getEglBaseContext())).createPeerConnectionFactory();
         worker.scheduleWithFixedDelay(() -> {
             if (socket != null && socket.connected() && !uuid.isEmpty()) {
@@ -213,6 +238,17 @@ final class DeskEngine {
                 Peer peer = new Peer(sender, uuid, true);
                 peers.put(sender, peer); hostConnections++; changed();
                 peer.pc.addTrack(screenTrack, Collections.singletonList("billd-screen"));
+                // Avoid CPU-bound software VP8 when a hardware H.264 encoder is
+                // available. Reorder negotiated capabilities, retaining fallback codecs.
+                if (hardwareH264) {
+                    List<RtpCapabilities.CodecCapability> codecs = new ArrayList<>(
+                            factory.getRtpSenderCapabilities(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO).codecs);
+                    codecs.sort(Comparator.comparingInt(codec -> codec.name.equalsIgnoreCase("H264")
+                            ? (codec.parameters.getOrDefault("profile-level-id", "").startsWith("42") ? 0 : 1) : 2));
+                    for (RtpTransceiver transceiver : peer.pc.getTransceivers())
+                        if (transceiver.getMediaType() == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO)
+                            transceiver.setCodecPreferences(codecs);
+                }
                 peer.pc.createOffer(new SdpAdapter() {
                     @Override public void onCreateSuccess(SessionDescription sdp) {
                         worker.execute(() -> peer.local(sdp, "nativeWebRtcOffer"));
@@ -304,11 +340,48 @@ final class DeskEngine {
                 capturer = new ScreenCapturerAndroid(consent, new MediaProjection.Callback() {
                     @Override public void onStop() { stopSharing(); }
                 });
-                capturer.initialize(texture, context, screenSource.getCapturerObserver());
-                double scale = Math.min(1.0, (double) limitSize / Math.max(width, height));
+                CapturerObserver observer = screenSource.getCapturerObserver();
+                SurfaceTextureHelper captureTexture = texture;
+                // Accessed only on the capture handler, including the idle refresh.
+                long[] lastFrameTimeNs = {0};
+                capturer.initialize(texture, context, new CapturerObserver() {
+                    @Override public void onCapturerStarted(boolean success) { observer.onCapturerStarted(success); }
+                    @Override public void onCapturerStopped() { observer.onCapturerStopped(); }
+                    @Override public void onFrameCaptured(VideoFrame frame) {
+                        long now = System.nanoTime();
+                        lastFrameTimeNs[0] = now;
+                        List<Long> sample = performanceCapture;
+                        if (sample != null) synchronized (sample) {
+                            if (sample.size() < 240) sample.add(now);
+                        }
+                        // forceFrame reuses the SurfaceTexture timestamp when the
+                        // display is idle. A fresh timestamp lets adaptation and
+                        // encoding accept the retry instead of dropping it as old.
+                        frame.getBuffer().retain();
+                        VideoFrame current = new VideoFrame(frame.getBuffer(), frame.getRotation(), now);
+                        try { observer.onFrameCaptured(current); }
+                        finally { current.release(); }
+                    }
+                });
+                double scale = Math.min(1.0, (double) captureShortEdge / Math.min(width, height));
+                // ScreenCapturerAndroid ignores fps; constrain frames before encoding.
+                screenSource.adaptOutputFormat(even(width * scale), even(height * scale), captureFps);
                 capturer.startCapture(even(width * scale), even(height * scale), captureFps);
                 screenTrack = factory.createVideoTrack("billd-screen", screenSource);
                 sharing = true; status = "共享已开启，连接仍需你确认"; changed();
+                // The final animation frame can be dropped downstream. Android
+                // produces no more frames on a static screen, so refresh the latest
+                // texture at 2 fps while idle, without retaining its OES buffer.
+                idleScreenRefresh = new Runnable() {
+                    @Override public void run() {
+                        if (!sharing) return;
+                        if (hostConnections > 0 && lastFrameTimeNs[0] > 0
+                                && System.nanoTime() - lastFrameTimeNs[0] >= 500_000_000L)
+                            captureTexture.forceFrame();
+                        captureTexture.getHandler().postDelayed(this, 500);
+                    }
+                };
+                captureTexture.getHandler().postDelayed(idleScreenRefresh, 500);
             } catch (Exception e) { stopScreenNow(); error("屏幕共享", e); }
         });
     }
@@ -317,7 +390,8 @@ final class DeskEngine {
         worker.execute(() -> {
             screenWidth = width; screenHeight = height;
             if (capturer != null && sharing) {
-                double scale = Math.min(1.0, (double) limitSize / Math.max(width, height));
+                double scale = Math.min(1.0, (double) captureShortEdge / Math.min(width, height));
+                screenSource.adaptOutputFormat(even(width * scale), even(height * scale), captureFps);
                 capturer.changeCaptureFormat(even(width * scale), even(height * scale), captureFps);
             }
         });
@@ -325,6 +399,8 @@ final class DeskEngine {
     void stopSharing() { worker.execute(this::stopScreenNow); }
     private void stopScreenNow() {
         sharing = false; requests.clear();
+        if (texture != null && idleScreenRefresh != null) texture.getHandler().removeCallbacks(idleScreenRefresh);
+        idleScreenRefresh = null;
         main.post(() -> { if (DeskAccessibilityService.current != null) DeskAccessibilityService.current.resetInput(); });
         List<String> hosts = new ArrayList<>();
         peers.forEach((id, p) -> { if (p.host) hosts.add(id); });
@@ -405,7 +481,64 @@ final class DeskEngine {
         final List<DataChannel> channels = new ArrayList<>();
         final List<IceCandidate> pendingIce = new ArrayList<>();
         DataChannel outgoing;
+        int maxBitrateKbps = 1500;
         boolean remoteSet, closed;
+        boolean samplingPerformance;
+        void samplePerformance(String action) {
+            if (samplingPerformance || performanceCapture != null) return;
+            samplingPerformance = true;
+            List<Long> capture = new ArrayList<>();
+            List<double[]> encoded = new ArrayList<>();
+            long start = System.nanoTime();
+            performanceStartNs = start;
+            performanceEncoded = encoded;
+            performanceCapture = capture;
+            pc.getStats(report -> {
+                JSONObject before = performanceCounters(report);
+                worker.schedule(() -> {
+                    performanceCapture = null;
+                    performanceEncoded = null;
+                    samplingPerformance = false;
+                    if (closed) return;
+                    pc.getStats(after -> {
+                        JSONArray timestamps = new JSONArray();
+                        synchronized (capture) { for (long timestamp : capture) timestamps.put((Object) ((timestamp - start) / 1000000.0)); }
+                        Log.d("BilldDeskPerf", json("action", action, "before", before,
+                                "after", performanceCounters(after), "captureMs", timestamps).toString());
+                        // Keep each log record below Android's per-entry limit.
+                        synchronized (encoded) { for (int offset = 0; offset < encoded.size(); offset += 20) {
+                            JSONArray encodedFrames = new JSONArray();
+                            for (int i = offset; i < Math.min(offset + 20, encoded.size()); i++) {
+                                JSONArray row = new JSONArray();
+                                for (double value : encoded.get(i)) row.put((Object) value);
+                                encodedFrames.put(row);
+                            }
+                            Log.d("BilldDeskFrame", json("action", action, "part", offset / 20,
+                                    "encodedFrames", encodedFrames).toString());
+                        } }
+                    });
+                }, 2, TimeUnit.SECONDS);
+            });
+        }
+        JSONObject performanceCounters(RTCStatsReport report) {
+            for (RTCStats stats : report.getStatsMap().values()) {
+                Map<String, Object> values = stats.getMembers();
+                if (!stats.getType().equals("outbound-rtp") || !"video".equals(values.get("kind"))) continue;
+                JSONObject result = json("timeUs", report.getTimestampUs());
+                try { result.put("transportWideFeedback", pc.getSenders().stream()
+                        .anyMatch(sender -> sender.getParameters().getHeaderExtensions().stream()
+                                .anyMatch(extension -> extension.getUri().contains("transport-wide")))); }
+                catch (Exception ignored) {}
+                for (String key : new String[]{"framesEncoded", "framesSent", "totalEncodeTime", "frameWidth", "frameHeight",
+                        "qualityLimitationReason", "encoderImplementation", "totalPacketSendDelay", "packetsSent", "bytesSent", "targetBitrate",
+                        "keyFramesEncoded", "qpSum", "retransmittedPacketsSent", "retransmittedBytesSent", "nackCount", "pliCount", "hugeFramesSent"}) {
+                    Object value = values.get(key);
+                    if (value != null) try { result.put(key, value); } catch (Exception ignored) {}
+                }
+                return result;
+            }
+            return new JSONObject();
+        }
         Peer(String id, String room, boolean host) {
             this.id = id; this.room = room; this.host = host;
             List<PeerConnection.IceServer> ice = Arrays.asList(
@@ -465,6 +598,9 @@ final class DeskEngine {
                             JSONObject data = msg.optJSONObject("data");
                             if (data == null) return;
                             String type = msg.optString("msgType");
+                            if (msg.optBoolean("performanceSample") && (type.equals("billdDeskBehavior") && data.optInt("type") == 2
+                                    || type.equals("androidAction") && data.optString("action").equals("back")))
+                                samplePerformance(type.equals("androidAction") ? "back" : "click");
                             if (type.equals("billdDeskBehavior") || type.equals("androidAction")) {
                                 main.post(() -> {
                                     if (!sharing || closed) return;
@@ -472,8 +608,11 @@ final class DeskEngine {
                                     if (service != null) service.command(type, data);
                                 });
                             } else if (type.equals("changeMaxFramerate") || type.equals("changeResolutionRatio")) {
-                                if (type.equals("changeMaxFramerate")) captureFps = Math.max(5, Math.min(30, data.optInt("val", 20)));
-                                else limitSize = Math.max(360, Math.min(1920, data.optInt("val", 1080)));
+                                if (type.equals("changeMaxFramerate")) {
+                                    captureFps = Math.max(5, Math.min(60, data.optInt("val", 20)));
+                                    bitrate(maxBitrateKbps);
+                                }
+                                else captureShortEdge = Math.max(360, Math.min(2160, data.optInt("val", 1080)));
                                 resizeScreen(screenWidth, screenHeight);
                             } else if (type.equals("changeMaxBitrate")) bitrate(data.optInt("val", 1500));
                         } catch (Exception ignored) { Log.w("BilldDesk", "Ignored invalid control message"); }
@@ -494,11 +633,16 @@ final class DeskEngine {
                         "requestId", UUID.randomUUID().toString(), "data", data).toString().getBytes(StandardCharsets.UTF_8)), false));
         }
         void bitrate(int kbps) {
+            maxBitrateKbps = Math.max(250, Math.min(30000, kbps));
             for (RtpSender sender : pc.getSenders()) {
                 if (sender.track() != null && sender.track().kind().equals("video")) {
                     RtpParameters p = sender.getParameters();
-                    for (RtpParameters.Encoding e : p.encodings) e.maxBitrateBps = Math.max(250, Math.min(8000, kbps)) * 1000;
-                    sender.setParameters(p);
+                    p.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION;
+                    for (RtpParameters.Encoding e : p.encodings) {
+                        e.maxBitrateBps = maxBitrateKbps * 1000;
+                        e.maxFramerate = captureFps;
+                    }
+                    if (!sender.setParameters(p)) Log.w("BilldDesk", "Video quality parameters were not applied");
                 }
             }
         }
@@ -512,7 +656,7 @@ final class DeskEngine {
             worker.execute(() -> {
                 if (closed) return;
                 if (state == PeerConnection.PeerConnectionState.CONNECTED) {
-                    if (host) { status = "正在被远程控制（" + hostConnections + " 个连接）"; bitrate(1500); }
+                    if (host) { status = "正在被远程控制（" + hostConnections + " 个连接）"; bitrate(maxBitrateKbps); }
                     else viewerStatus = "已连接，可触控和输入文字";
                     changed();
                 } else if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.CLOSED) closePeer(id);

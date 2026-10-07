@@ -87,6 +87,7 @@ export enum WsMsgTypeEnum {
   billdDeskStartRemote = 'billdDeskStartRemote',
   billdDeskStartRemoteResult = 'billdDeskStartRemoteResult',
   billdDeskBehavior = 'billdDeskBehavior',
+  androidAction = 'androidAction',
   billdDeskOffer = 'billdDeskOffer',
   billdDeskAnswer = 'billdDeskAnswer',
   billdDeskCandidate = 'billdDeskCandidate',
@@ -300,6 +301,7 @@ export type WsOfferType = IReqWsFormat<{
   receiver: string;
   live_room_id: number | string;
   isRemoteDesk?: boolean;
+  platform?: string;
 }>;
 
 export type WsAnswerType = IReqWsFormat<{
