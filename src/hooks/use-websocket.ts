@@ -363,6 +363,7 @@ export const useWebsocket = () => {
               videoEl: createNullVideo(),
               deskUserUuid: deskUserUuid.value,
               remoteDeskUserUuid: remoteDeskUserUuid.value,
+              remotePlatform: data.platform,
             });
             await webRtcRemoteDesk.sendAnswer({
               sender: mySocketId.value,

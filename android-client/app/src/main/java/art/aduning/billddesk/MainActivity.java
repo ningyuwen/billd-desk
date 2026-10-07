@@ -170,11 +170,14 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         action(navigationButtons, "返回", () -> engine.navigation("back"));
         action(navigationButtons, "主页", () -> engine.navigation("home"));
         action(navigationButtons, "任务", () -> engine.navigation("recents"));
+        action(navigationButtons, "通知", () -> engine.androidAction("notifications"));
+        action(navigationButtons, "快捷设置", () -> engine.androidAction("quickSettings"));
+        action(navigationButtons, "收起", () -> engine.androidAction("dismissShade"));
         for (int i = 0; i < toolbar.getChildCount(); i++) {
             View item = toolbar.getChildAt(i);
             if (item instanceof Button) item.setLayoutParams(new LinearLayout.LayoutParams(dp(72), dp(48)));
         }
-        navigationButtons.setLayoutParams(new LinearLayout.LayoutParams(dp(216), -2));
+        navigationButtons.setLayoutParams(new LinearLayout.LayoutParams(dp(72 * navigationButtons.getChildCount()), -2));
         for (int i = 0; i < navigationButtons.getChildCount(); i++)
             navigationButtons.getChildAt(i).setLayoutParams(new LinearLayout.LayoutParams(dp(72), dp(48)));
         update(); engine.connect();
@@ -293,7 +296,7 @@ public final class MainActivity extends Activity implements DeskEngine.Listener 
         toolbar.setOrientation(side ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         toolbar.setGravity(side ? Gravity.CENTER_VERTICAL : Gravity.NO_GRAVITY);
         navigationButtons.setOrientation(side ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-        navigationButtons.setLayoutParams(new LinearLayout.LayoutParams(side ? -1 : dp(216), -2));
+        navigationButtons.setLayoutParams(new LinearLayout.LayoutParams(side ? -1 : dp(72 * navigationButtons.getChildCount()), -2));
         for (int i = 0; i < toolbar.getChildCount(); i++) {
             View item = toolbar.getChildAt(i);
             if (item instanceof Button) item.setLayoutParams(new LinearLayout.LayoutParams(side ? -1 : dp(72), dp(48)));
