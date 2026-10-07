@@ -1,0 +1,253 @@
+BilldDesk 新 Mac 开发环境迁移说明
+整理日期：2026-10-07
+
+本文基于项目源码、构建配置及原开发机文件检查整理。
+原开发机：Apple 芯片 Mac，用户名 bytedance。
+原项目目录：/Users/bytedance/WebstormProjects/billd-desk
+新 Mac 尚未验证；完成迁移后仍需执行构建、安装和真实连接验证。
+本文不包含密码、私钥或完整连接凭证，敏感文件须单独私密传输。
+
+一、先准备源码
+
+仓库：git@github.com:ningyuwen/billd-desk.git
+主开发分支：develop
+工作分支命名：p/ningyuwen/<任务名>
+后续工作从最新 develop 开始，合并或 PR 目标也是 develop。
+新 Mac 需要拥有仓库访问权限；可以为新 Mac 单独配置 GitHub SSH 密钥。
+
+新工作目录可执行：
+  git clone --branch develop git@github.com:ningyuwen/billd-desk.git
+  cd billd-desk
+
+以下内容已在 Git 中，拉取源码即可获得：
+  AGENTS.md
+  package.json、pnpm-lock.yaml、.npmrc
+  vite.config.ts
+  electron-builder.json5、electron-builder.private.json5
+  ops/sign-mac-local.cjs、ops/setup-mac-local-signing.py
+  android-client/Gradle Wrapper 及 Android 构建配置
+  ops/README.md、android-client/README.md
+
+不要迁移 node_modules、dist、electron-dist、构建缓存作为新电脑的依赖来源。
+应在新 Mac 按锁文件重新安装依赖并重新构建。
+
+二、必须额外迁移的私有服务配置
+
+原文件：
+  /Users/bytedance/WebstormProjects/billd-desk/.env.production.local
+目标位置：
+  新 Mac 项目根目录/.env.production.local
+
+该文件被 Git 忽略，Mac、网页和 Android 的生产构建共用它。
+已确认的非密码配置：
+  VITE_APP_DOMAIN=aduning.art
+  VITE_ASSET_BASE_URL=/
+  VITE_WEB_DESK_URL=https://desk.aduning.art
+  VITE_API_BASE_URL=https://desk.aduning.art/api
+  VITE_WEBSOCKET_URL=wss://desk.aduning.art
+  VITE_COTURN_URL=turn:49.51.202.11:3478
+  VITE_COTURN_USERNAME=billddesk
+  VITE_COTURN_CREDENTIAL=<从原文件保留实际值，不使用此占位符>
+
+优先复制原文件。缺少 TURN 凭证会影响跨网络中继连接。
+客户端构建会内置 TURN 配置，不能将管理密钥放入 VITE_ 变量。
+
+本地开发模式：
+  pnpm dev 使用 development 模式，不读取 .env.production.local。
+  若本地开发也连接现有私有服务，在项目根目录执行：
+    cp .env.production.local .env.development.local
+  两份文件均应保持私密，不提交 Git。
+
+三、必须迁移的 Mac 签名身份
+
+原目录：
+  /Users/bytedance/.config/billd-desk/signing/
+目标目录：
+  新 Mac 的 ~/.config/billd-desk/signing/
+
+迁移整个目录，核心文件包括：
+  billd-desk.keychain-db   专用签名钥匙串，包含签名身份
+  identity.p12            加密的证书及私钥备份
+  certificate.pem         证书
+  keychain-password       钥匙串及 P12 密码
+  identity.json           签名指纹和文件路径
+
+当前签名信息：
+  证书名称：BilldDesk Local Code Signing
+  应用标识：com.billddesk.app
+  证书 SHA-1：8D167221FED1C3D3B775D052BD7671E79FC348A6
+  类型：固定本地自签名证书；未使用 Apple Developer ID，未做 Apple 公证。
+
+迁移注意事项：
+  1. 不要在空目录先运行 setup-mac-local-signing.py，它会生成新证书。
+  2. 保留原指纹和私钥，不重新生成证书，不回退 ad-hoc 临时签名。
+  3. identity.json 中 keychain、passwordFile 当前是旧电脑的绝对路径。
+     新电脑用户名或用户目录不同时，必须改为新电脑上的实际路径。
+  4. 目录权限为 0700，核心文件权限为 0600。
+  5. 不提交这些文件，不放入公开下载目录，不随安装包分发。
+
+复制完成后，可在新 Mac 执行以下命令更新路径，保留原身份：
+
+python3 - <<'PY'
+import json
+from pathlib import Path
+root = Path.home() / '.config/billd-desk/signing'
+config = root / 'identity.json'
+data = json.loads(config.read_text())
+expected = '8D167221FED1C3D3B775D052BD7671E79FC348A6'
+if str(data.get('identity', '')).upper() != expected:
+    raise SystemExit('证书指纹不匹配，请检查迁移来源。')
+for name in ['billd-desk.keychain-db', 'identity.p12', 'certificate.pem', 'keychain-password']:
+    if not (root / name).is_file():
+        raise SystemExit('缺少签名文件：' + name)
+data['keychain'] = str(root / 'billd-desk.keychain-db')
+data['passwordFile'] = str(root / 'keychain-password')
+config.write_text(json.dumps(data, indent=2) + '\n')
+root.chmod(0o700)
+for name in ['billd-desk.keychain-db', 'identity.p12', 'certificate.pem', 'keychain-password', 'identity.json']:
+    (root / name).chmod(0o600)
+print('原签名身份保留，路径已更新。')
+PY
+
+签名脚本会读取密码并解锁专用钥匙串。
+若新 Mac 无法使用迁移后的钥匙串，应从原 identity.p12 恢复同一身份，
+并确认 codesign 对私钥的访问权限；不要通过生成新证书绕过问题。
+本文未验证钥匙串在新 Mac 上的可用性。
+
+四、桌面开发依赖与构建
+
+需要安装：
+  Node.js：原机为 v26.2.0，项目未固定 Node 版本，可作为环境复现参考。
+  pnpm：项目现有构建流程使用 9.15.9。
+  Xcode Command Line Tools：可通过 xcode-select --install 安装。
+  Python 3：用于签名配置维护脚本。
+
+原机依赖版本参考，以 pnpm-lock.yaml 为实际安装依据：
+  Electron 33.2.1
+  electron-builder 25.1.8
+  @nut-tree-fork/nut-js 4.2.2
+
+在项目根目录安装依赖：
+  npm exec --yes --package=pnpm@9.15.9 -- pnpm install --frozen-lockfile --registry=https://registry.npmjs.org
+
+桌面端安装不要添加 --ignore-scripts，Electron 有 postinstall 安装脚本。
+.npmrc 的 hoist 配置已随仓库提供，不需要手动重建。
+不能直接复制不同架构电脑的 node_modules。
+
+本地启动：
+  npm exec --yes --package=pnpm@9.15.9 -- pnpm run dev
+
+Apple 芯片 Mac 的正式验证构建：
+  VITE_APP_RELEASE_PROJECT_ISWEB=false npm exec --yes --package=pnpm@9.15.9 -- pnpm exec vite build
+  CSC_IDENTITY_AUTO_DISCOVERY=false npm exec --yes --package=pnpm@9.15.9 -- pnpm exec electron-builder --mac --arm64 --config electron-builder.private.json5 --publish never
+
+产物位置：electron-release/<package.json 中的版本>/
+Intel Mac 须使用相应架构配置并重新验证，不能直接照搬 --arm64。
+不要直接运行带 standard-version 的 build:mac 等脚本，避免意外修改版本或提交。
+桌面和网页构建会覆盖同一个 dist/，部署前须确认构建类型。
+
+五、如果还要开发和打包 Android
+
+需要安装：
+  JDK 17 及以上
+  Android SDK Platform 35、所需 Build Tools、Platform Tools（含 adb）
+  接受对应 Android SDK 许可
+
+仓库已固定：
+  Gradle 8.14.5，由 ./gradlew 使用和下载
+  Android Gradle Plugin 8.13.2
+  当前 Android 包名 art.aduning.billddesk
+  当前 APK 架构 arm64-v8a
+
+必须迁移：
+  原项目/android-client/signing.local.properties
+  /Users/bytedance/.codex/private/billd-desk/android-release.jks
+  /Users/bytedance/.codex/private/billd-desk/android-keystore-password
+
+建议私密迁移整个 ~/.codex/private/billd-desk/ 目录。
+signing.local.properties 中的密码和 keyAlias 保留原值，
+storeFile 改为新 Mac 上 android-release.jks 的实际绝对路径。
+后续覆盖升级现有手机 APK 必须使用原发布密钥。
+缺少签名配置时 release APK 未签名，不能直接安装。
+
+新项目/android-client/local.properties 应按新电脑重新填写：
+  sdk.dir=/新电脑的实际绝对路径/Android/sdk
+
+原机路径仅供参考：/Users/bytedance/Library/Android/sdk
+不要把旧电脑的用户名和 SDK 路径原样复制到不同用户目录。
+
+构建及安装，在 android-client/ 下执行：
+  ./gradlew :app:assembleRelease :app:lintRelease
+  adb devices -l
+  adb -s <本次确认的设备序列号> install -r app/build/outputs/apk/release/app-release.apk
+
+手机需确认新 Mac 的 USB 调试授权。
+覆盖安装保留数据，不卸载、不清空手机已有设备和密码记录。
+
+六、按需配置服务器部署访问
+
+仅开发客户端并连接现有服务，不需要复制服务器数据库及后端密钥。
+如需要从新 Mac 部署网页或排查服务器，再准备 SSH 访问。
+
+原机 ~/.ssh/config 的相关配置：
+  Host codex-49
+    HostName 49.51.202.11
+    User ubuntu
+    IdentityFile ~/.ssh/id_ed25519
+
+新 Mac 可以使用自己的 SSH 密钥，并在服务器授权对应公钥。
+若迁移旧私钥，必须私密传输并保留正确权限，不提交仓库。
+
+服务器上的配置位置，属于部署资料，无需为客户端开发复制到新 Mac：
+  /etc/billd-desk/compose.env
+  /etc/billd-desk/server.env
+  /etc/billd-desk/turnserver.conf
+  /etc/letsencrypt/live/desk.aduning.art/
+
+原机项目中未发现 ops/compose.env、ops/server.env、ops/turnserver.conf、
+ops/secret.ts 的实际私密副本；仓库只有相应模板及部署脚本。
+Git push、上传正式安装包、部署线上服务均按具体任务指令执行。
+
+七、应用历史数据与系统权限
+
+原 Mac 应用数据目录：
+  /Users/bytedance/Library/Application Support/BilldDesk/
+
+开发环境迁移无需复制此目录。
+如确实需要保留原设备身份和连接记录，先完全退出应用再备份和迁移。
+目录包含敏感连接数据，须私密处理。
+两台 Mac 同时使用时，建议新 Mac 注册独立设备身份，避免复制旧身份。
+
+新 Mac 需要重新授予 BilldDesk 录屏和输入控制权限。
+安装后通过 Finder、Dock 或 LaunchServices 正常启动应用，授权后完全退出重开。
+终端直接运行应用二进制的录屏成功，不能证明 BilldDesk 自身权限有效。
+不迁移或直接修改系统权限数据库。
+
+八、迁移完成后的验收
+
+  [ ] 源码来自最新 develop，保留原有本地工作。
+  [ ] 私有服务环境文件就位，开发模式也使用正确服务地址。
+  [ ] Mac 原签名身份完整，identity.json 路径已适配新电脑。
+  [ ] 依赖按锁文件安装，Electron 和输入控制原生依赖可加载。
+  [ ] Mac 桌面构建和安装包生成成功。
+  [ ] 覆盖安装至 /Applications/BilldDesk.app，并核对是本次产物。
+  [ ] codesign --verify --deep --strict /Applications/BilldDesk.app 校验通过。
+  [ ] codesign -dvvv /Applications/BilldDesk.app 显示正确签名名称。
+  [ ] codesign -dr - /Applications/BilldDesk.app 的证书指纹与原身份一致。
+  [ ] 从正常应用入口启动，新电脑录屏与输入控制授权完成。
+  [ ] 与真实手机连接，检查画面、点击、文字输入和断开重连。
+  [ ] 若涉及 Android，release 构建、Lint、原签名覆盖安装完成。
+
+当前主窗口固定为 800×500，布局修改需检查滚动和主要操作可达性。
+文档修改无需重新构建应用；应用代码修改按 AGENTS.md 完成对应端构建、
+部署与运行验证。缺少设备、签名或权限时明确记录阻塞，不能以静态检查代替。
+
+项目内依据：
+  AGENTS.md
+  ops/README.md
+  ops/mac-stable-signing-20261006.md
+  ops/sign-mac-local.cjs
+  ops/setup-mac-local-signing.py
+  android-client/README.md
+  android-client/app/build.gradle
+  vite.config.ts、package.json、pnpm-lock.yaml、.gitignore

@@ -58,6 +58,21 @@ rsync -az --delete --exclude=downloads/ dist/ codex-49:/var/www/billd-desk/
 
 ## 桌面安装包
 
+### 新 Mac 私有配置迁移
+
+迁移工具见 [使用说明](config-migration-README.txt) 和 [环境清单](mac-development-migration.txt)。
+`config-migration.py export` 生成密码加密的 age 配置包；`import` 在新 Mac 恢复原签名身份、备份已有配置并调整绝对路径。
+下载入口为 `https://desk.aduning.art/private/billd-desk-migration.zip`，仅 HTTPS、用户名和密码验证后可获取。
+服务器只保存配置密文及下载密码哈希；独立解密密码留在原 Mac 的 `~/.config/billd-desk/migration/`，不上传服务器或提交 Git。
+下载 ZIP 含加密配置、导入脚本和说明；先核对私密密码文件中的 ZIP SHA-256，再运行脚本。
+导入工具以原 P12 重建专用钥匙串并实际试签，保留原证书指纹，不改变系统信任设置或全局钥匙串搜索列表。
+配置导入不代替新电脑的依赖安装、应用构建、系统授权或真实连接验证。
+
+服务端将 `nginx-migration.conf` 安装到 `/etc/nginx/snippets/billd-desk-migration.conf`，在现有 HTTPS server 内 include；
+将 `nginx-migration-limit.conf` 安装到 `/etc/nginx/conf.d/billd-migration-limit.conf`。
+密文 ZIP 位于 `/srv/billd-desk-migration/`，下载密码哈希位于 `/etc/nginx/billd-desk-migration.htpasswd`，均为 root:www-data，仅供 Nginx 读取。
+更新配置先备份并执行 `nginx -t`，通过后 reload；部署失败恢复原配置。
+
 使用同一份 `.env.production.local`，将私有 API、WSS 和 TURN 凭证内置到客户端。
 在 macOS Apple 芯片机器执行：
 
