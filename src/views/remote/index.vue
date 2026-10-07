@@ -384,9 +384,9 @@ const {
 } = useRTCParams();
 const { handleScreen, handleRtcBilldDeskBehavior } = useIpcRendererSend();
 
-const currentMaxBitrate = ref(maxBitrate.value[3].value);
+const currentMaxBitrate = ref(maxBitrate.value[7].value);
 const currentMaxFramerate = ref(maxFramerate.value[4].value);
-const currentResolutionRatio = ref(resolutionRatio.value[3].value);
+const currentResolutionRatio = ref(resolutionRatio.value[4].value);
 const currentVideoContentHint = ref(videoContentHint.value[3].value);
 const currentAudioContentHint = ref(audioContentHint.value[0].value);
 const rtc = ref<WebRTCClass>();
