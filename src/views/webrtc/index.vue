@@ -1,21 +1,42 @@
 <template>
   <div class="webrtc-wrap">
-    <div
-      ref="dragEl"
-      class="drag"
-      :style="style"
+    <header
+      ref="controlBarRef"
+      class="control-bar connection-details"
+      @mousedown.stop
+      @mouseup.stop
+      @keydown.stop="handleToolbarKeyDown"
+      @keyup.stop
     >
-      <span
-        class="txt"
+      <button
+        ref="detailButtonRef"
+        type="button"
+        class="control-button"
+        aria-label="连接详情"
+        aria-controls="connection-details-panel"
+        :aria-expanded="showDetail"
+        title="连接详情"
         @click="showDetail = !showDetail"
       >
-        连接详情
-      </span>
+        详情
+      </button>
 
       <div
+        id="connection-details-panel"
         class="info"
         :class="{ show: showDetail }"
       >
+        <div class="details-heading">
+          <span>连接详情</span>
+          <button
+            type="button"
+            class="control-button"
+            aria-label="关闭连接详情"
+            @click="closeDetail"
+          >
+            收起
+          </button>
+        </div>
         <div
           class="debug-area"
           @click="handleOpenDebug"
@@ -285,26 +306,27 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <nav
-      v-if="isRemoteAndroid"
-      class="android-controls"
-      aria-label="安卓系统操作"
-      @mousedown.stop
-      @mouseup.stop
-    >
-      <button
-        v-for="action in androidActions"
-        :key="action.id"
-        type="button"
-        :disabled="!canControlAndroid"
-        :title="`${action.description} · Alt+Shift+${action.key}`"
-        @click="handleAndroidAction(action.id)"
+      <nav
+        v-if="isRemoteAndroid"
+        class="android-controls"
+        aria-label="安卓系统操作"
+        @mousedown.stop
+        @mouseup.stop
       >
-        {{ action.label }}
-      </button>
-    </nav>
+        <button
+          v-for="action in androidActions"
+          :key="action.id"
+          type="button"
+          class="control-button"
+          :disabled="!canControlAndroid"
+          :title="`${action.description} · Alt+Shift+${action.key}`"
+          @click="handleAndroidAction(action.id)"
+        >
+          {{ action.label }}
+        </button>
+      </nav>
+    </header>
 
     <div
       ref="videoWrapRef"
@@ -326,14 +348,13 @@
 </template>
 
 <script lang="ts" setup>
-import { useDraggable } from '@vueuse/core';
 import {
   computeBox,
   copyToClipBoard,
   getRandomString,
   windowReload,
 } from 'billd-utils';
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { ENGLISH_LETTER, NUT_KEY_MAP, WINDOW_ID_ENUM } from '@/constant';
@@ -395,13 +416,12 @@ const showCursor = ref(true);
 const receiverId = ref('');
 const loopBilldDeskUpdateUserTimer = ref();
 const showDetail = ref(false);
-const dragEl = ref<HTMLDivElement>();
-const { style } = useDraggable(dragEl, {
-  initialValue: { x: 40, y: 40 },
-});
-const currentMaxBitrate = ref(maxBitrate.value[3].value);
+const controlBarRef = ref<HTMLElement>();
+const detailButtonRef = ref<HTMLButtonElement>();
+// Keep fine text at the source resolution, with enough bitrate for transitions.
+const currentMaxBitrate = ref(maxBitrate.value[7].value);
 const currentMaxFramerate = ref(maxFramerate.value[4].value);
-const currentResolutionRatio = ref(resolutionRatio.value[3].value);
+const currentResolutionRatio = ref(resolutionRatio.value[4].value);
 const currentVideoContentHint = ref(videoContentHint.value[3].value);
 const currentAudioContentHint = ref(audioContentHint.value[0].value);
 
@@ -409,7 +429,11 @@ let clickTimer: any;
 let isLongClick = false;
 let remoteMouseDown = false;
 const videoList = ref<HTMLVideoElement[]>([]);
-const videoWrapRef = ref<HTMLVideoElement>();
+const videoWrapRef = ref<HTMLDivElement>();
+const videoSizes = new WeakMap<
+  HTMLVideoElement,
+  ReturnType<typeof videoFullBox>
+>();
 const windowId = ref(WINDOW_ID_ENUM.webrtc);
 const roomId = ref('');
 const videoMap = ref(new Map());
@@ -635,6 +659,26 @@ function handleKeyCombination(event: KeyboardEvent) {
           });
       }
     });
+  }
+}
+
+function closeDetail() {
+  showDetail.value = false;
+  detailButtonRef.value?.focus();
+}
+
+function handleToolbarKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && showDetail.value) {
+    event.preventDefault();
+    closeDetail();
+    return;
+  }
+  if (!showDetail.value) {
+    const action = androidShortcut(event);
+    if (action) {
+      event.preventDefault();
+      if (!event.repeat) handleAndroidAction(action.id);
+    }
   }
 }
 
@@ -966,12 +1010,13 @@ function handleClose() {
 
 function handleVideoElSize(videoEl, setWindowBounds = false) {
   if (!videoWrapRef.value) return;
-  let clientWidth = document.documentElement.clientWidth;
-  let clientHeight = document.documentElement.clientHeight;
+  const barHeight = controlBarRef.value?.offsetHeight || 0;
+  let clientWidth = videoWrapRef.value.clientWidth;
+  let clientHeight = videoWrapRef.value.clientHeight;
   if (ipcRenderer && initVideo.value) {
     initVideo.value = false;
     clientWidth = window.screen.availWidth;
-    clientHeight = window.screen.availHeight;
+    clientHeight = window.screen.availHeight - titlebarHeight.value - barHeight;
   }
 
   const res = computeBox({
@@ -983,13 +1028,13 @@ function handleVideoElSize(videoEl, setWindowBounds = false) {
     minWidth: clientWidth,
   });
 
-  videoFullBox({
-    wrapSize: {
-      width: clientWidth,
-      height: clientHeight,
-    },
-    videoEl,
-  });
+  const wrapSize = { width: clientWidth, height: clientHeight };
+  const videoSize = videoSizes.get(videoEl);
+  if (videoSize) {
+    videoSize.changeWrapSize(wrapSize);
+  } else {
+    videoSizes.set(videoEl, videoFullBox({ wrapSize, videoEl }));
+  }
 
   if (res.width && res.height && setWindowBounds) {
     ipcRendererSend({
@@ -998,7 +1043,7 @@ function handleVideoElSize(videoEl, setWindowBounds = false) {
       requestId: getRandomString(8),
       data: {
         width: Math.ceil(res.width),
-        height: Math.ceil(res.height + titlebarHeight.value),
+        height: Math.ceil(res.height + titlebarHeight.value + barHeight),
       },
     });
   }
@@ -1042,15 +1087,6 @@ watch(
         videoWrapRef.value.appendChild(item.videoEl);
       }
     });
-    nextTick(() => {
-      if (videoWrapRef.value) {
-        if (newVal.size) {
-          videoWrapRef.value.style.display = 'inline-block';
-        } else {
-          videoWrapRef.value.style.removeProperty('display');
-        }
-      }
-    });
   },
   {
     deep: true,
@@ -1064,6 +1100,10 @@ function handleCopy(str) {
 }
 
 function handleKeyDown(event: KeyboardEvent) {
+  if (showDetail.value) {
+    handleToolbarKeyDown(event);
+    return;
+  }
   if (isWatchMode.value) return;
   const action = androidShortcut(event);
   if (action) {
@@ -1097,7 +1137,7 @@ function handleKeyDown(event: KeyboardEvent) {
 }
 
 function handleKeyUp(event: KeyboardEvent) {
-  if (isWatchMode.value) return;
+  if (showDetail.value || isWatchMode.value) return;
   if (androidShortcut(event)) {
     event.preventDefault();
     return;
@@ -1167,6 +1207,7 @@ function handleContextmenu() {
 
 function handleMouseDown(event: MouseEvent) {
   if (isWatchMode.value || event.button !== 0) return;
+  if (event.target === videoWrapRef.value) return;
   networkStore.rtcMap.get(receiverId.value)?.sampleInteraction('click');
   remoteMouseDown = true;
   clickTimer = setTimeout(function () {
@@ -1206,6 +1247,7 @@ function handleMouseDown(event: MouseEvent) {
 }
 
 function handleMouseMove(event: MouseEvent) {
+  if (event.target === videoWrapRef.value) return;
   // 获取点击相对于视窗的位置
   const clickX = event.clientX;
   const clickY = event.clientY;
@@ -1291,77 +1333,84 @@ function handleMouseUp(event: MouseEvent) {
   overflow: hidden;
   width: 100vw;
   height: 100vh;
-  .android-controls {
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    z-index: 998;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 4px;
-    box-sizing: border-box;
-    max-width: calc(100vw - 124px);
-    padding: 4px;
-    border: 1px solid #d3d7de;
-    border-radius: 12px;
-    background: #fff;
-    button {
-      min-height: 40px;
-      padding: 0 12px;
-      border: 0;
-      border-radius: 8px;
-      background: transparent;
-      color: #202938;
-      font: inherit;
-      cursor: pointer;
-      &:hover:not(:disabled) {
-        background: #eef2f7;
-      }
-      &:active:not(:disabled) {
-        background: #dce4ef;
-      }
-      &:focus-visible {
-        outline: 2px solid #2563eb;
-        outline-offset: 1px;
-      }
-      &:disabled {
-        color: #687386;
-        cursor: not-allowed;
-      }
-    }
-  }
-  .drag {
-    position: fixed;
+  display: flex;
+  flex-direction: column;
+  .control-bar {
+    position: relative;
     z-index: 999;
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background-color: white;
-    box-shadow:
-      rgba(0, 0, 0, 0.15) 0px 15px 25px,
-      rgba(0, 0, 0, 0.05) 0px 5px 10px;
-    .txt {
-      cursor: pointer;
-
-      user-select: none;
+    flex-shrink: 0;
+    gap: 6px;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #fff;
+  }
+  .control-button {
+    flex-shrink: 0;
+    min-height: 30px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #202938;
+    font: inherit;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+    &:hover:not(:disabled),
+    &[aria-expanded='true'] {
+      background: #eef2f7;
     }
-
+    &:active:not(:disabled) {
+      background: #dce4ef;
+    }
+    &:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 1px;
+    }
+    &:disabled {
+      color: #687386;
+      cursor: not-allowed;
+    }
+  }
+  .android-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    margin-left: auto;
+    overflow-x: auto;
+  }
+  .connection-details {
+    flex-shrink: 0;
     .info {
       position: absolute;
-      top: 100%;
-      left: 0;
+      top: calc(100% + 4px);
+      left: 8px;
       display: none;
       box-sizing: border-box;
       padding: 10px;
       width: 800px;
-      max-width: calc(100vw - 48px);
-      max-height: calc(100vh - 132px);
+      max-width: calc(100vw - 16px);
+      max-height: calc(100vh - 52px);
       overflow-y: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
       background-color: white;
+      .details-heading {
+        position: sticky;
+        top: -10px;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 0;
+        background: #fff;
+        font-weight: 500;
+      }
       box-shadow: rgba(100, 100, 111, 0.2) 0px 7px 29px 0px;
       .debug-area {
         position: absolute;
@@ -1411,8 +1460,12 @@ function handleMouseUp(event: MouseEvent) {
     }
   }
   .remote-video {
-    max-width: 100vw;
-    max-height: 100vh;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    overflow: hidden;
     line-height: 0;
     &.hide-cursor {
       cursor: none;

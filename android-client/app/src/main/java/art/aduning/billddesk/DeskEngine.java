@@ -46,7 +46,7 @@ final class DeskEngine {
     private volatile List<double[]> performanceEncoded;
     private long performanceStartNs;
     private String viewerTarget = "", viewerPassword = "", viewerSender = "";
-    private int screenWidth = 0, screenHeight = 0, captureShortEdge = 1080;
+    private int screenWidth = 0, screenHeight = 0, captureShortEdge = 1440;
     private volatile int captureFps = 20;
     private boolean connecting = false;
     volatile ServerConfig config;
@@ -481,7 +481,7 @@ final class DeskEngine {
         final List<DataChannel> channels = new ArrayList<>();
         final List<IceCandidate> pendingIce = new ArrayList<>();
         DataChannel outgoing;
-        int maxBitrateKbps = 1500;
+        int maxBitrateKbps = 12000;
         boolean remoteSet, closed;
         boolean samplingPerformance;
         void samplePerformance(String action) {
@@ -612,9 +612,9 @@ final class DeskEngine {
                                     captureFps = Math.max(5, Math.min(60, data.optInt("val", 20)));
                                     bitrate(maxBitrateKbps);
                                 }
-                                else captureShortEdge = Math.max(360, Math.min(2160, data.optInt("val", 1080)));
+                                else captureShortEdge = Math.max(360, Math.min(2160, data.optInt("val", 1440)));
                                 resizeScreen(screenWidth, screenHeight);
-                            } else if (type.equals("changeMaxBitrate")) bitrate(data.optInt("val", 1500));
+                            } else if (type.equals("changeMaxBitrate")) bitrate(data.optInt("val", 12000));
                         } catch (Exception ignored) { Log.w("BilldDesk", "Ignored invalid control message"); }
                     });
                 }
