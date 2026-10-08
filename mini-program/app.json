@@ -1,0 +1,9 @@
+{
+  "pages": ["pages/remote/index"],
+  "window": {
+    "navigationBarTitleText": "BilldDesk 体验连接",
+    "navigationBarBackgroundColor": "#f6f8fc",
+    "navigationBarTextStyle": "black"
+  },
+  "style": "v2"
+}

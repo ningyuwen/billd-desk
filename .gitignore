@@ -23,6 +23,7 @@ android-client/signing.local.properties
 # Logs and TypeScript build cache
 *.log
 *.tsbuildinfo
+mini-program/project.private.config.json
 
 # Android signing keys
 *.jks

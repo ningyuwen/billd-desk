@@ -17,10 +17,14 @@ import {
 import { IPC_EVENT } from '../src/event';
 import { WINDOW_ID_ENUM } from '../src/pure-constant';
 
+import { registerMiniControl } from './mini-control';
+
 import type { nutjsTs } from './types';
 import type { IIpcRendererData } from '../src/pure-interface';
 
 const nutjs: nutjsTs = require('@nut-tree-fork/nut-js');
+
+registerMiniControl(nutjs);
 
 // Remote input needs fresh frames rather than delayed video playback. Electron 33's
 // WebRTC supports this override; keep a small recovery window and decode promptly.

@@ -261,6 +261,7 @@
           </div>
         </div>
       </section>
+      <MiniProgramHost v-if="ipcRenderer" />
     </div>
 
     <div
@@ -363,6 +364,7 @@ import {
   setVideoTrackContentHints,
 } from '@/utils';
 import { WebRTCClass } from '@/utils/network/webRTC';
+import MiniProgramHost from '@/views/remote/miniProgramHost.vue';
 import PwdModalCpt from '@/views/remote/pwdModal.vue';
 
 defineOptions({ name: 'RemotePage' });

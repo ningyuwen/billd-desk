@@ -1,0 +1,21 @@
+[Unit]
+Description=BilldDesk mini-program frame relay
+After=network.target
+
+[Service]
+Type=simple
+User=billd-mini
+WorkingDirectory=/opt/billd-mini-relay
+ExecStart=/usr/bin/node /opt/billd-mini-relay/server.mjs
+Environment=MINI_RELAY_BIND=127.0.0.1
+Environment=MINI_RELAY_PORT=4311
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
