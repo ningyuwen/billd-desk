@@ -1,0 +1,30 @@
+<view class="page">
+  <view wx:if="{{!connected}}" class="form">
+    <text class="title">连接自己的 Mac</text>
+    <text class="hint">请先在 Mac 开启“小程序体验连接”。</text>
+    <textarea value="{{invitation}}" bindinput="importInvitation" maxlength="512" disabled="{{connecting}}" placeholder="在 Mac 点“复制连接信息”，在这里长按粘贴，自动填入下面三项。" />
+    <input value="{{url}}" data-field="url" bindinput="change" placeholder="wss://你的域名/mini-control/" />
+    <input value="{{code}}" data-field="code" bindinput="change" type="number" maxlength="8" placeholder="8 位连接码" />
+    <input value="{{password}}" data-field="password" bindinput="change" password maxlength="64" placeholder="临时密码" />
+    <button type="primary" disabled="{{connecting}}" bindtap="connect">{{connecting ? '连接中…' : '请求连接'}}</button>
+    <button wx:if="{{connecting}}" bindtap="disconnect">取消连接</button>
+  </view>
+  <text class="status" role="status">{{status}}</text>
+  <view wx:if="{{connected}}">
+    <canvas type="2d" id="screen" class="screen" bindtouchstart="touchStart" bindtouchend="touchEnd" disable-scroll="true"></canvas>
+    <text class="hint">点画面单击；长按后松开为右键。画面外的黑边不触发操作。</text>
+    <view class="row">
+      <button size="mini" bindtap="scroll" data-amount="-3">向上滚动</button>
+      <button size="mini" bindtap="scroll" data-amount="3">向下滚动</button>
+      <button size="mini" bindtap="disconnect">断开</button>
+    </view>
+    <textarea value="{{text}}" data-field="text" bindinput="change" maxlength="1000" placeholder="输入文字，然后点发送（不支持组合快捷键）" />
+    <view class="row">
+      <button size="mini" bindtap="sendText">发送文字</button>
+      <button size="mini" bindtap="key" data-key="Enter">回车</button>
+      <button size="mini" bindtap="key" data-key="Backspace">退格</button>
+      <button size="mini" bindtap="key" data-key="Escape">Esc</button>
+    </view>
+  </view>
+  <text class="hint">体验原型：压缩主屏幕，无声音，适合点击和文字操作。切到后台会自动断开。</text>
+</view>

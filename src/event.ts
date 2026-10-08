@@ -1,4 +1,7 @@
 export const IPC_EVENT = {
+  miniScreenSource: 'miniScreenSource',
+  miniControl: 'miniControl',
+  miniRelease: 'miniRelease',
   commonTest: 'commonTest',
   powerSaveBlockerStart: 'powerSaveBlockerStart',
   closeAllWindow: 'closeAllWindow',

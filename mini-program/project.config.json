@@ -1,0 +1,30 @@
+{
+  "description": "BilldDesk 个人小程序体验原型",
+  "miniprogramRoot": "./",
+  "compileType": "miniprogram",
+  "appid": "wx85435a7191d3fe7b",
+  "projectname": "billd-desk-trial",
+  "libVersion": "3.7.0",
+  "setting": {
+    "es6": true,
+    "urlCheck": true,
+    "minified": true
+  },
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "file",
+        "value": "README.md"
+      },
+      {
+        "type": "file",
+        "value": "test.cjs"
+      },
+      {
+        "type": "file",
+        "value": "package.json"
+      }
+    ],
+    "include": []
+  }
+}
